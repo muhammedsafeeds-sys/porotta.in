@@ -21,6 +21,7 @@ export default function QueuePage() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [showBroaden, setShowBroaden] = useState(false);
   const [preferences, setPreferences] = useState({ selfGender: "", desiredGender: "", tags: [] as string[] });
+  const elapsedRef = useRef(0);
 
   useEffect(() => {
     const session = getSession();
@@ -34,8 +35,6 @@ export default function QueuePage() {
       tags: session.selectedTags,
     });
     trackQueue.entered();
-
-    const elapsedRef = useRef(0);
 
     // Timer
     const timerInterval = setInterval(() => {
