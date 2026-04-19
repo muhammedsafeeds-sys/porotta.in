@@ -75,7 +75,7 @@ export async function generateResponse(
   systemPrompt: string,
   messageHistory: Array<{ role: "user" | "model"; parts: { text: string }[] }>
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || "AIzaSyCMSZpvCTfItVBRTtzIr8tZaJhzRAwzmms";
 
   if (!apiKey) {
     console.warn("[Bot] No GEMINI_API_KEY set — using fallback response");
