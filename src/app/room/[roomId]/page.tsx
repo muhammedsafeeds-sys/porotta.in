@@ -38,6 +38,7 @@ export default function RoomPage() {
   const [cooldown, setCooldown] = useState(false);
   const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
   const [roomValid, setRoomValid] = useState(true);
+  const [partnerLeft, setPartnerLeft] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -150,25 +151,39 @@ export default function RoomPage() {
           if (!isMounted) return;
           const state = channel.presenceState();
           let isPartnerTyping = false;
+          let partnerPresent = false;
           for (const key in state) {
             if (key !== sessionId) {
+              partnerPresent = true;
               const presenceEntries = state[key] as any[];
               if (presenceEntries?.some((p) => p.isTyping === true)) {
                 isPartnerTyping = true;
-                break;
               }
             }
           }
           setPartnerTyping(isPartnerTyping);
 
-          // Safety: auto-clear typing indicator after 5 seconds
+          // Auto-clear typing after 3 seconds of no update
           if (isPartnerTyping) {
             if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
             typingFallbackRef.current = setTimeout(() => {
               if (isMounted) setPartnerTyping(false);
-            }, 5000);
+            }, 3000);
           } else {
             if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
+          }
+        })
+        .on("presence", { event: "leave" }, ({ key }: any) => {
+          if (!isMounted) return;
+          if (key !== sessionId) {
+            setPartnerLeft(true);
+            setPartnerTyping(false);
+          }
+        })
+        .on("presence", { event: "join" }, ({ key }: any) => {
+          if (!isMounted) return;
+          if (key !== sessionId) {
+            setPartnerLeft(false);
           }
         })
         .subscribe(async (status: any) => {
@@ -442,15 +457,22 @@ export default function RoomPage() {
         })}
 
         {/* Typing indicator */}
-        {partnerTyping && (
-          <div className="flex items-start">
-            <div className="bg-surface-1 border border-border rounded-2xl rounded-bl-md px-4 py-3 animate-fade-in">
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "0ms" }} />
-                <span className="w-2 h-2 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "200ms" }} />
-                <span className="w-2 h-2 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "400ms" }} />
+        {partnerTyping && !partnerLeft && (
+          <div className="flex items-start mb-1">
+            <div className="bg-surface-1 border border-border rounded-2xl rounded-bl-md px-3 py-2">
+              <div className="flex gap-[3px] items-center h-4">
+                <span className="w-[5px] h-[5px] bg-text-muted/60 rounded-full" style={{ animation: "dot-pulse 1.2s infinite ease-in-out", animationDelay: "0ms" }} />
+                <span className="w-[5px] h-[5px] bg-text-muted/60 rounded-full" style={{ animation: "dot-pulse 1.2s infinite ease-in-out", animationDelay: "160ms" }} />
+                <span className="w-[5px] h-[5px] bg-text-muted/60 rounded-full" style={{ animation: "dot-pulse 1.2s infinite ease-in-out", animationDelay: "320ms" }} />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Partner left notice */}
+        {partnerLeft && (
+          <div className="text-center py-3">
+            <p className="text-xs text-text-muted">Partner left the chat</p>
           </div>
         )}
 
