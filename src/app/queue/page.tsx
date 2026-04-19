@@ -83,7 +83,7 @@ export default function QueuePage() {
             table: "chat_rooms",
             filter: `session_a=eq.${sessionId}`,
           },
-          (payload) => {
+          (payload: any) => {
             trackQueue.matchFound();
             updateSession({ lastRoomId: payload.new.id });
             router.push(`/room/${payload.new.id}`);
@@ -97,7 +97,7 @@ export default function QueuePage() {
             table: "chat_rooms",
             filter: `session_b=eq.${sessionId}`,
           },
-          (payload) => {
+          (payload: any) => {
             trackQueue.matchFound();
             updateSession({ lastRoomId: payload.new.id });
             router.push(`/room/${payload.new.id}`);
