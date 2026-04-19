@@ -22,6 +22,7 @@ export default function QueuePage() {
   const [showBroaden, setShowBroaden] = useState(false);
   const [preferences, setPreferences] = useState({ selfGender: "", desiredGender: "", tags: [] as string[] });
   const elapsedRef = useRef(0);
+  const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
     const session = getSession();
@@ -63,12 +64,11 @@ export default function QueuePage() {
 
     let channel: any = null;
     let matchIntervalId: NodeJS.Timeout | null = null;
-    let hasNavigated = false;
 
     const navigateToRoom = (newRoomId: string) => {
       // Prevent multiple navigations from overlapping callbacks
-      if (hasNavigated) return;
-      hasNavigated = true;
+      if (hasNavigatedRef.current) return;
+      hasNavigatedRef.current = true;
       trackQueue.matchFound();
       updateSession({ lastRoomId: newRoomId });
       router.push(`/room/${newRoomId}`);
@@ -132,7 +132,7 @@ export default function QueuePage() {
 
       // 4. Attempt match immediately, and then every 3 seconds
       const tryMatch = async () => {
-        if (hasNavigated) return;
+        if (hasNavigatedRef.current) return;
 
         // Call atomic match RPC
         const { data: roomId } = await supabase.rpc("attempt_match", {
@@ -176,7 +176,7 @@ export default function QueuePage() {
       }
       
       // Remove from pool on exit (only if we haven't been matched)
-      if (sessionId && !hasNavigated) {
+      if (sessionId && !hasNavigatedRef.current) {
         import("@/lib/supabase/client").then(({ createClient }) => {
           createClient().from("waiting_pool").delete().eq("session_id", sessionId);
         });
@@ -193,8 +193,11 @@ export default function QueuePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: sid })
         }).then(res => res.json()).then(data => {
-          if (data.roomId && !hasNavigated) {
-            navigateToRoom(data.roomId);
+          if (data.roomId && !hasNavigatedRef.current) {
+            hasNavigatedRef.current = true;
+            trackQueue.matchFound();
+            updateSession({ lastRoomId: data.roomId });
+            router.push(`/room/${data.roomId}`);
           }
         }).catch(() => {});
       }
