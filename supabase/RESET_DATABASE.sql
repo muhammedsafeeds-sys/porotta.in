@@ -142,61 +142,75 @@ CREATE OR REPLACE FUNCTION attempt_match(p_session_id UUID)
 RETURNS UUID AS $$
 DECLARE
   v_new_room_id UUID;
-  v_matched_session_id UUID;
-  v_existing_room_id UUID;
-  v_self_gender TEXT;
-  v_desired_gender TEXT;
+  v_matched_session_id UUID := NULL;
+  v_active_room_id UUID := NULL;
+  v_self_gender TEXT := NULL;
+  v_desired_gender TEXT := NULL;
+  pool_rec RECORD;
+  match_rec RECORD;
+  room_rec RECORD;
 BEGIN
   -- 1. Check if caller is already in an active room
-  SELECT id INTO v_existing_room_id 
-  FROM chat_rooms 
-  WHERE (session_a = p_session_id OR session_b = p_session_id) 
-    AND status = 'active'
-  ORDER BY created_at DESC
-  LIMIT 1;
+  FOR room_rec IN 
+    SELECT id 
+    FROM chat_rooms 
+    WHERE (session_a = p_session_id OR session_b = p_session_id) 
+      AND status = 'active'
+    ORDER BY created_at DESC
+    LIMIT 1
+  LOOP
+    v_active_room_id := room_rec.id;
+  END LOOP;
 
-  IF v_existing_room_id IS NOT NULL THEN
+  IF v_active_room_id IS NOT NULL THEN
     DELETE FROM waiting_pool WHERE session_id = p_session_id;
-    RETURN v_existing_room_id;
+    RETURN v_active_room_id;
   END IF;
 
   -- 2. Lock our own row
-  SELECT self_gender, desired_gender INTO v_self_gender, v_desired_gender
-  FROM waiting_pool
-  WHERE session_id = p_session_id
-  FOR UPDATE;
+  FOR pool_rec IN 
+    SELECT self_gender, desired_gender 
+    FROM waiting_pool
+    WHERE session_id = p_session_id
+    FOR UPDATE
+  LOOP
+    v_self_gender := pool_rec.self_gender;
+    v_desired_gender := pool_rec.desired_gender;
+  END LOOP;
 
-  IF NOT FOUND THEN
+  IF v_self_gender IS NULL THEN
     RETURN NULL;
   END IF;
 
   -- 3. Find best match and lock their row (SKIP LOCKED prevents race conditions)
-  v_matched_session_id := (
-    SELECT w.session_id
-    FROM waiting_pool w
-    WHERE w.session_id != p_session_id
+  FOR match_rec IN 
+    SELECT session_id
+    FROM waiting_pool
+    WHERE session_id != p_session_id
     ORDER BY 
       CASE 
-        WHEN (w.desired_gender = v_self_gender OR w.desired_gender = 'anyone') 
-         AND (v_desired_gender = w.self_gender OR v_desired_gender = 'anyone') THEN 0
+        WHEN (desired_gender = v_self_gender OR desired_gender = 'anyone') 
+         AND (v_desired_gender = self_gender OR v_desired_gender = 'anyone') THEN 0
         ELSE 1
       END ASC,
-      w.entered_at ASC
+      entered_at ASC
     LIMIT 1
     FOR UPDATE SKIP LOCKED
-  );
+  LOOP
+    v_matched_session_id := match_rec.session_id;
+  END LOOP;
 
   IF v_matched_session_id IS NOT NULL THEN
     -- 4. Double check partner isn't already in a room
-    SELECT id INTO v_existing_room_id 
-    FROM chat_rooms 
-    WHERE (session_a = v_matched_session_id OR session_b = v_matched_session_id) 
-      AND status = 'active'
-    LIMIT 1;
-
-    IF v_existing_room_id IS NOT NULL THEN
-      RETURN NULL;
-    END IF;
+    FOR room_rec IN 
+      SELECT id 
+      FROM chat_rooms 
+      WHERE (session_a = v_matched_session_id OR session_b = v_matched_session_id) 
+        AND status = 'active'
+      LIMIT 1
+    LOOP
+      RETURN NULL; -- Partner is busy
+    END LOOP;
 
     -- 5. Create room
     INSERT INTO chat_rooms (session_a, session_b)
