@@ -120,9 +120,10 @@ export default function RoomPage() {
           let isPartnerTyping = false;
           for (const key in state) {
             if (key !== sessionId) {
-              // check if partner has isTyping: true
-              if (state[key].some((p: any) => p.isTyping)) {
+              const presenceEntries = state[key] as any[];
+              if (presenceEntries?.some((p) => p.isTyping === true)) {
                 isPartnerTyping = true;
+                break;
               }
             }
           }

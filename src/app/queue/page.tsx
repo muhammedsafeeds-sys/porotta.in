@@ -115,6 +115,22 @@ export default function QueuePage() {
 
       // 4. Attempt match immediately, and then every 3 seconds
       const tryMatch = async () => {
+        // Fallback: Check if someone else matched with us already
+        const { data: existingRoom } = await supabase
+          .from("chat_rooms")
+          .select("id")
+          .or(`session_a.eq.${sessionId},session_b.eq.${sessionId}`)
+          .eq("status", "active")
+          .limit(1)
+          .single();
+
+        if (existingRoom) {
+          trackQueue.matchFound();
+          updateSession({ lastRoomId: existingRoom.id });
+          router.push(`/room/${existingRoom.id}`);
+          return;
+        }
+
         const { data: roomId, error } = await supabase.rpc("attempt_match", {
           p_session_id: sessionId,
         });
