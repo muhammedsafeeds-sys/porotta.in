@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 
 interface ChatMessage {
   id: string;
+  room_id?: string;
   sender_session: string;
   content: string;
   sent_at: string;
