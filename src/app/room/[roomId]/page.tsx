@@ -83,7 +83,18 @@ export default function RoomPage() {
         }
       }
 
-      // 2. Setup Realtime Channel
+      // 2. Fetch Initial Messages
+      const { data: initialMsgs } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("room_id", roomId)
+        .order("sent_at", { ascending: true });
+      
+      if (initialMsgs) {
+        setMessages(initialMsgs);
+      }
+
+      // 3. Setup Realtime Channel
       const channel = supabase.channel(`room:${roomId}`, {
         config: { presence: { key: sessionId } }
       });
@@ -95,7 +106,10 @@ export default function RoomPage() {
           { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
           (payload) => {
             const newMsg = payload.new as ChatMessage;
-            setMessages((prev) => [...prev, newMsg]);
+            setMessages((prev) => {
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
             if (newMsg.sender_session !== sessionId) {
               trackRoom.replyReceived(roomId);
             }
@@ -134,11 +148,33 @@ export default function RoomPage() {
             await channel.track({ isTyping: false });
           }
         });
+
+      // 4. Polling Fallback (every 5 seconds)
+      const pollInterval = setInterval(async () => {
+        const { data: latestMsgs } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("room_id", roomId)
+          .order("sent_at", { ascending: true });
+        
+        if (latestMsgs) {
+          setMessages((prev) => {
+            const newMsgs = latestMsgs.filter(lm => !prev.some(pm => pm.id === lm.id));
+            if (newMsgs.length === 0) return prev;
+            return [...prev, ...newMsgs];
+          });
+        }
+      }, 5000);
+
+      (window as any).roomPollId = pollInterval;
     };
 
     initRoom();
 
     return () => {
+      if ((window as any).roomPollId) {
+        clearInterval((window as any).roomPollId);
+      }
       if (channelRef.current) {
         const supabase = createClient();
         supabase.removeChannel(channelRef.current);
