@@ -56,10 +56,11 @@ export default function MatchSelector({ prefillTag }: MatchSelectorProps) {
   useEffect(() => {
     const fetchCount = async () => {
       try {
-        const { createClient } = await import("@/lib/supabase/client");
-        const supabase = createClient();
-        const { count } = await supabase.from("waiting_pool").select('*', { count: 'exact', head: true });
-        setOnlineCount(count || 0);
+        const res = await fetch(`/api/online-count?t=${Date.now()}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setOnlineCount(data.count);
+        }
       } catch (err) {
         console.error(err);
       }
@@ -158,7 +159,7 @@ export default function MatchSelector({ prefillTag }: MatchSelectorProps) {
 
         {/* Privacy line */}
         <p className="text-center text-xs text-text-muted">
-          No account needed. Messages auto-clear.
+          No account needed.
         </p>
 
         {/* Start CTA */}

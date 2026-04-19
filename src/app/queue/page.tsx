@@ -40,12 +40,17 @@ export default function QueuePage() {
       setElapsed((p) => p + 1);
     }, 1000);
 
-    // Fetch real online count from waiting_pool
+    // Fetch real online count from API
     const fetchCount = async () => {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { count } = await supabase.from("waiting_pool").select('*', { count: 'exact', head: true });
-      setOnlineCount((count || 0));
+      try {
+        const res = await fetch(`/api/online-count?t=${Date.now()}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setOnlineCount(data.count);
+        }
+      } catch (err) {
+        // ignore
+      }
     };
     fetchCount();
     const countInterval = setInterval(fetchCount, 5000);

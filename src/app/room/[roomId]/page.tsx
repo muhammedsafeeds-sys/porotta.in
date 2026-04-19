@@ -572,7 +572,6 @@ export default function RoomPage() {
               onChange={(e) => handleInputChange(e.target.value.slice(0, MAX_CHARS))}
               onKeyDown={handleKeyDown}
               placeholder="Type a message…"
-              disabled={cooldown}
               className="w-full px-4 py-2.5 bg-surface-2 border border-border rounded-full text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none transition-colors min-h-[44px] pr-14"
               autoComplete="off"
               autoFocus
