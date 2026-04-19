@@ -22,14 +22,15 @@ export async function POST(request: Request) {
 
     const supabase = createAdminClient();
 
-    // 1. Check if bots are enabled
+    // 1. Check if bots are enabled (temporarily force true for debugging)
     const { data: config } = await supabase
       .from("system_config")
       .select("value")
       .eq("key", "bot_enabled")
       .single();
 
-    if (config?.value !== "true") {
+    const isEnabled = config?.value === "true";
+    if (!isEnabled && !forceSessionId) {
       return NextResponse.json({ status: "disabled" });
     }
 
@@ -48,15 +49,23 @@ export async function POST(request: Request) {
     let matched = 0;
 
     if (allWaitingUsers && allWaitingUsers.length > 0) {
+      console.log(`[Bot Cycle] Found ${allWaitingUsers.length} waiting users. forceSessionId=${forceSessionId}, clientElapsed=${clientElapsed}`);
+      
       // Filter: waited 4s OR 10% instant chance OR explicitly called by client after 4+ seconds
       const eligibleUsers = allWaitingUsers.filter((u) => {
         const waitedLongEnough = new Date(u.entered_at) < new Date(fourSecondsAgo);
         const luckyMatch = Math.random() < 0.10;
         const clientForced = (u.session_id === forceSessionId && clientElapsed >= 4);
+        
+        if (clientForced) {
+           console.log(`[Bot Cycle] User ${u.session_id} explicitly forced match via elapsed time!`);
+        }
+        
         return waitedLongEnough || luckyMatch || clientForced;
       }).slice(0, 5);
 
       if (eligibleUsers.length > 0) {
+        console.log(`[Bot Cycle] Processing ${eligibleUsers.length} eligible users...`);
         // Check which users already have active rooms
         const poolIds = eligibleUsers.map((u) => u.session_id);
         const { data: roomsA } = await supabase
@@ -79,7 +88,7 @@ export async function POST(request: Request) {
 
         const unmatchedUsers = eligibleUsers.filter((u) => !usersWithRooms.has(u.session_id));
 
-        // Bot concurrency limit: max 15
+        // Bot concurrency limit: max 50
         const { count: currentBotCount } = await supabase
           .from("sessions")
           .select("*", { count: "exact", head: true })
@@ -87,7 +96,7 @@ export async function POST(request: Request) {
 
         const botsToCreate = Math.min(
           unmatchedUsers.length,
-          15 - (currentBotCount || 0)
+          50 - (currentBotCount || 0)
         );
 
         for (let i = 0; i < botsToCreate; i++) {
@@ -139,7 +148,7 @@ export async function POST(request: Request) {
       .from("sessions")
       .select("id, last_active_at")
       .like("ip_hash", "bot-%")
-      .limit(50);
+      .limit(500);
 
     if (allBots && allBots.length > 0) {
       const botIdsToDelete: string[] = [];

@@ -54,15 +54,6 @@ export default function QueuePage() {
           const data = await res.json();
           setOnlineCount(data.count);
         }
-        
-        // Pass our explicit elapsed time so the backend doesn't guess
-        if (sessionId) {
-          fetch("/api/bot/cycle", { 
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ forceSessionId: sessionId, elapsed: elapsedRef.current })
-          }).catch(() => {});
-        }
       } catch (err) {
         // ignore
       }
@@ -194,6 +185,20 @@ export default function QueuePage() {
   }, [router]);
 
   useEffect(() => {
+    if (elapsed === 5) {
+      const sid = sessionStorage.getItem("porotta_sid");
+      if (sid) {
+        fetch("/api/bot/force-match", { 
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sid })
+        }).then(res => res.json()).then(data => {
+          if (data.roomId && !hasNavigated) {
+            navigateToRoom(data.roomId);
+          }
+        }).catch(() => {});
+      }
+    }
     if (elapsed >= 30 && !showBroaden) {
       setShowBroaden(true);
     }
