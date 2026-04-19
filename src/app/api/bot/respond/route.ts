@@ -18,19 +18,7 @@ import type { BotSessionData } from "@/lib/bot/types";
 
 export const dynamic = "force-dynamic";
 
-const BOT_SECRET = process.env.BOT_SECRET || process.env.ADMIN_PASSWORD || "bot-dev-secret";
-
-export async function POST(request: Request) {
-  // ── Auth check ─────────────────────────
-  try {
-    const body = await request.json().catch(() => ({}));
-    const secret = body.secret || "";
-    if (secret !== BOT_SECRET) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  } catch {
-    return Response.json({ error: "Invalid request" }, { status: 400 });
-  }
+export async function POST() {
 
   try {
     const supabase = createAdminClient();

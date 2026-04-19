@@ -230,6 +230,7 @@ export default function RoomPage() {
 
         // Poor man's cron: ping the bot engine to keep it alive
         fetch("/api/bot/cycle", { method: "POST" }).catch(() => {});
+        fetch("/api/bot/respond", { method: "POST" }).catch(() => {});
       }, 5000);
     };
 

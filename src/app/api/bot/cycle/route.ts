@@ -101,66 +101,91 @@ export async function POST() {
     let responded = 0;
 
     if (botSessions && botSessions.length > 0) {
-      const botIds = botSessions.map((s) => s.id);
-
-      // Find active rooms with these bots
-      const { data: botRoomsA } = await supabase
-        .from("chat_rooms")
-        .select("id, session_a, session_b")
-        .in("session_a", botIds)
-        .eq("status", "active");
-
-      const { data: botRoomsB } = await supabase
-        .from("chat_rooms")
-        .select("id, session_a, session_b")
-        .in("session_b", botIds)
-        .eq("status", "active");
-
-      const allBotRooms = [...(botRoomsA || []), ...(botRoomsB || [])];
-
-      for (const room of allBotRooms) {
-        const botSessionId = botIds.includes(room.session_a) ? room.session_a : room.session_b;
-        const humanSessionId = botSessionId === room.session_a ? room.session_b : room.session_a;
-
-        try {
-          // Call the respond API internally
-          const respondUrl = new URL("/api/bot/respond", "http://localhost");
-          // We call respond directly via an internal import approach
-          // For now, we trigger a respond for each bot room
-          const secret = process.env.BOT_SECRET || process.env.ADMIN_PASSWORD || "Safeed3030";
+      // Call respond API — no auth needed, it checks bot_enabled internally
+      // Use the request URL to build the correct base URL
+      try {
+        const selfUrl = process.env.NEXT_PUBLIC_SITE_URL 
+          || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+          || "http://localhost:3000";
           
-          // Use absolute URL from headers or env
-          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL 
-            ? `https://${process.env.VERCEL_URL}` 
-            : "http://localhost:3000";
-            
-          await fetch(`${baseUrl}/api/bot/respond`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ secret }),
-          }).catch(() => null);
-          
-          responded++;
-          break; // Only need to call respond once — it processes all rooms
-        } catch {
-          // ignore individual room errors
-        }
+        await fetch(`${selfUrl}/api/bot/respond`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        responded++;
+      } catch (e) {
+        console.error("[Bot Cycle] Respond call failed:", e);
       }
     }
 
     // ═══════════════════════════════════════
-    // CLEANUP: Delete stale bot sessions
+    // CLEANUP: Delete stale + orphan bot sessions
     // ═══════════════════════════════════════
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-    const { data: staleBots } = await supabase
+    
+    // Get ALL bot sessions
+    const { data: allBots } = await supabase
       .from("sessions")
-      .select("id")
+      .select("id, last_active_at")
       .like("ip_hash", "bot-%")
-      .lt("last_active_at", twoMinutesAgo)
       .limit(50);
 
-    if (staleBots && staleBots.length > 0) {
-      await supabase.from("sessions").delete().in("id", staleBots.map((s) => s.id));
+    if (allBots && allBots.length > 0) {
+      const botIdsToDelete: string[] = [];
+
+      for (const bot of allBots) {
+        // Check 1: Stale (inactive > 2 min)
+        if (new Date(bot.last_active_at) < new Date(twoMinutesAgo)) {
+          botIdsToDelete.push(bot.id);
+          continue;
+        }
+
+        // Check 2: Orphan — no active room
+        const { data: roomA } = await supabase
+          .from("chat_rooms")
+          .select("id")
+          .eq("session_a", bot.id)
+          .eq("status", "active")
+          .limit(1);
+        const { data: roomB } = await supabase
+          .from("chat_rooms")
+          .select("id")
+          .eq("session_b", bot.id)
+          .eq("status", "active")
+          .limit(1);
+
+        const hasActiveRoom = (roomA && roomA.length > 0) || (roomB && roomB.length > 0);
+        
+        // Also check if bot is in the waiting pool
+        const { data: inPool } = await supabase
+          .from("waiting_pool")
+          .select("id")
+          .eq("session_id", bot.id)
+          .limit(1);
+
+        const inWaitingPool = inPool && inPool.length > 0;
+
+        if (!hasActiveRoom && !inWaitingPool) {
+          botIdsToDelete.push(bot.id);
+        }
+      }
+
+      if (botIdsToDelete.length > 0) {
+        // End any rooms these bots are in
+        await supabase.from("chat_rooms")
+          .update({ status: "ended", end_reason: "disconnect", ended_at: new Date().toISOString() })
+          .in("session_a", botIdsToDelete)
+          .eq("status", "active");
+        await supabase.from("chat_rooms")
+          .update({ status: "ended", end_reason: "disconnect", ended_at: new Date().toISOString() })
+          .in("session_b", botIdsToDelete)
+          .eq("status", "active");
+        // Remove from waiting pool
+        await supabase.from("waiting_pool").delete().in("session_id", botIdsToDelete);
+        // Delete sessions
+        await supabase.from("sessions").delete().in("id", botIdsToDelete);
+        console.log(`[Bot Cleanup] Removed ${botIdsToDelete.length} stale/orphan bots`);
+      }
     }
 
     return NextResponse.json({ status: "ok", triggered, matched, responded });
@@ -185,11 +210,19 @@ async function injectBot(
   const botState = createInitialBotState(identity);
   const botSessionId = crypto.randomUUID();
 
-  const anonNames = ["Stranger", "Dreamer", "Guest", "Anonymous"];
-  const useAgeGender = Math.random() > 0.5;
-  const displayNickname = useAgeGender
+  const creativeNames = [
+    "bloom", "star", "shadow", "pixel", "echo", "nova", "drift",
+    "haze", "spark", "frost", "misty", "vibe", "zen", "luna",
+    "neon", "rain", "cloud", "breeze", "ember", "ripple", "dusk",
+    "wave", "cosmic", "glitch", "aurora", "coral", "maple", "iris",
+  ];
+  
+  // 30% chance: gender+age like "F24", "M29"
+  // 70% chance: creative name
+  const usesAgeGender = Math.random() < 0.3;
+  const displayNickname = usesAgeGender
     ? `${identity.gender === "man" ? "M" : "F"}${identity.age}`
-    : anonNames[Math.floor(Math.random() * anonNames.length)];
+    : creativeNames[Math.floor(Math.random() * creativeNames.length)];
 
   // 1. Create bot session
   const { error: sessionError } = await supabase.from("sessions").insert({

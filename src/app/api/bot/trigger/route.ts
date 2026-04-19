@@ -189,11 +189,19 @@ async function injectBot(
   const botSessionId = crypto.randomUUID();
 
   // Create an anonymous display name
-  const anonNames = ["Stranger", "Dreamer", "Guest", "Anonymous"];
-  const useAgeGender = Math.random() > 0.5;
-  const displayNickname = useAgeGender 
-    ? `${identity.gender === "man" ? "M" : "F"}${identity.age}` 
-    : anonNames[Math.floor(Math.random() * anonNames.length)];
+  const creativeNames = [
+    "bloom", "star", "shadow", "pixel", "echo", "nova", "drift",
+    "haze", "spark", "frost", "misty", "vibe", "zen", "luna",
+    "neon", "rain", "cloud", "breeze", "ember", "ripple", "dusk",
+    "wave", "cosmic", "glitch", "aurora", "coral", "maple", "iris",
+  ];
+  
+  // 30% chance: gender+age like "F24", "M29"  
+  // 70% chance: creative name
+  const usesAgeGender = Math.random() < 0.3;
+  const displayNickname = usesAgeGender
+    ? `${identity.gender === "man" ? "M" : "F"}${identity.age}`
+    : creativeNames[Math.floor(Math.random() * creativeNames.length)];
 
   // 1. Create a real session row for the bot
   const { error: sessionError } = await supabase.from("sessions").insert({
