@@ -15,6 +15,7 @@ export default function EndedPage() {
   const searchParams = useSearchParams();
   const roomId = params.roomId as string;
   const wasReported = searchParams.get("reported") === "true";
+  const wasPartnerLeft = searchParams.get("left") === "true";
   const [isReported, setIsReported] = useState(wasReported);
   const [feedbackGiven, setFeedbackGiven] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -50,10 +51,14 @@ export default function EndedPage() {
 
   const headline = isReported
     ? "Chat closed after report"
+    : wasPartnerLeft
+    ? "Partner left the chat"
     : "Chat ended";
 
   const supportCopy = isReported
     ? "Thank you for helping keep porotta.in safe. You can try again whenever you're ready."
+    : wasPartnerLeft
+    ? "Your chat partner disconnected."
     : null;
 
   return (

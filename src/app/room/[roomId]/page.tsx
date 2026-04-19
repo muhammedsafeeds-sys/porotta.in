@@ -47,8 +47,8 @@ export default function RoomPage() {
   const trackQueueRef = useRef<{ isTracking: boolean, pending: boolean | null }>({ isTracking: false, pending: null });
   const channelRef = useRef<any>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  // Safety timeout: if partner typing state is stuck, clear it after 5s
   const typingFallbackRef = useRef<NodeJS.Timeout | null>(null);
+  const partnerLeaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const MAX_CHARS = 500;
   const session = getSession();
@@ -176,14 +176,28 @@ export default function RoomPage() {
         .on("presence", { event: "leave" }, ({ key }: any) => {
           if (!isMounted) return;
           if (key !== sessionId) {
-            setPartnerLeft(true);
             setPartnerTyping(false);
+            // Give partner 10 seconds to reconnect
+            partnerLeaveTimerRef.current = setTimeout(async () => {
+              if (!isMounted) return;
+              // End the room in DB
+              await supabase.from("chat_rooms").update({
+                status: "ended",
+                end_reason: "disconnect",
+                ended_by: key
+              }).eq("id", roomId);
+              router.push(`/ended/${roomId}?left=true`);
+            }, 10000);
           }
         })
         .on("presence", { event: "join" }, ({ key }: any) => {
           if (!isMounted) return;
           if (key !== sessionId) {
-            setPartnerLeft(false);
+            // Partner came back, cancel the leave timer
+            if (partnerLeaveTimerRef.current) {
+              clearTimeout(partnerLeaveTimerRef.current);
+              partnerLeaveTimerRef.current = null;
+            }
           }
         })
         .subscribe(async (status: any) => {
@@ -235,6 +249,7 @@ export default function RoomPage() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (partnerLeaveTimerRef.current) clearTimeout(partnerLeaveTimerRef.current);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
@@ -457,7 +472,7 @@ export default function RoomPage() {
         })}
 
         {/* Typing indicator */}
-        {partnerTyping && !partnerLeft && (
+        {partnerTyping && (
           <div className="flex items-start mb-1">
             <div className="bg-surface-1 border border-border rounded-2xl rounded-bl-md px-3 py-2">
               <div className="flex gap-[3px] items-center h-4">
@@ -466,13 +481,6 @@ export default function RoomPage() {
                 <span className="w-[5px] h-[5px] bg-text-muted/60 rounded-full" style={{ animation: "dot-pulse 1.2s infinite ease-in-out", animationDelay: "320ms" }} />
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Partner left notice */}
-        {partnerLeft && (
-          <div className="text-center py-3">
-            <p className="text-xs text-text-muted">Partner left the chat</p>
           </div>
         )}
 
