@@ -262,6 +262,22 @@ async function processRoom(
 
     responseText = await generateResponse(systemPrompt, history);
 
+    if (responseText.includes("[END_CHAT]")) {
+      // The AI detected inappropriate content and decided to end the chat
+      await supabase
+        .from("chat_rooms")
+        .update({
+          status: "ended",
+          end_reason: "user_end", // Makes it look like the "user" disconnected
+          ended_by: botSessionId,
+          ended_at: new Date().toISOString(),
+        })
+        .eq("id", roomId);
+
+      await supabase.from("sessions").delete().eq("id", botSessionId);
+      return "ended_due_to_inappropriate_content";
+    }
+
     // Apply human-like mutations
     responseText = humanizeText(responseText, identity.personality, currentMood);
   }
