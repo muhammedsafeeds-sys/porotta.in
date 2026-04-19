@@ -169,12 +169,12 @@ export default function RoomPage() {
           }
           setPartnerTyping(isPartnerTyping);
 
-          // Auto-clear typing after 3 seconds of no update
+          // Auto-clear typing after 1.5 seconds of no update
           if (isPartnerTyping) {
             if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
             typingFallbackRef.current = setTimeout(() => {
               if (isMounted) setPartnerTyping(false);
-            }, 3000);
+            }, 1500);
           } else {
             if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
           }
@@ -326,7 +326,7 @@ export default function RoomPage() {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         updateTypingStatus(false);
-      }, 2000);
+      }, 800);
     } else {
       updateTypingStatus(false);
     }

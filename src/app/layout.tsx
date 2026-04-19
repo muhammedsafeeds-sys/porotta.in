@@ -38,6 +38,7 @@ export const metadata: Metadata = {
 };
 
 import DesktopAd from "@/components/ads/DesktopAd";
+import { Analytics } from "@vercel/analytics/next";
 
 export default function RootLayout({
   children,
@@ -49,6 +50,7 @@ export default function RootLayout({
       <body className="min-h-dvh flex flex-col relative">
         <DesktopAd />
         {children}
+        <Analytics />
       </body>
     </html>
   );
