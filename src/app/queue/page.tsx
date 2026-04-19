@@ -72,7 +72,6 @@ export default function QueuePage() {
     const countInterval = setInterval(fetchCount, 3000);
 
     let channel: any = null;
-    let sessionId = sessionStorage.getItem("porotta_sid");
     let matchIntervalId: NodeJS.Timeout | null = null;
     let hasNavigated = false;
 
