@@ -52,6 +52,17 @@ export default function QueuePage() {
 
     let channel: any = null;
     let sessionId = sessionStorage.getItem("porotta_sid");
+    let matchIntervalId: NodeJS.Timeout | null = null;
+    let hasNavigated = false;
+
+    const navigateToRoom = (newRoomId: string) => {
+      // Prevent multiple navigations from overlapping callbacks
+      if (hasNavigated) return;
+      hasNavigated = true;
+      trackQueue.matchFound();
+      updateSession({ lastRoomId: newRoomId });
+      router.push(`/room/${newRoomId}`);
+    };
 
     const initQueue = async () => {
       const { createClient } = await import("@/lib/supabase/client");
@@ -69,7 +80,7 @@ export default function QueuePage() {
         desired_gender: session.desiredGender,
         selected_tags: session.selectedTags,
         nickname: session.nickname,
-        ip_hash: "dev-ip-hash", // Replace with real IP hash via edge function in prod
+        ip_hash: "anon-" + sessionId.slice(0, 8),
       });
 
       // 2. Subscribe to chat_rooms table for my matches
@@ -84,9 +95,7 @@ export default function QueuePage() {
             filter: `session_a=eq.${sessionId}`,
           },
           (payload: any) => {
-            trackQueue.matchFound();
-            updateSession({ lastRoomId: payload.new.id });
-            router.push(`/room/${payload.new.id}`);
+            navigateToRoom(payload.new.id);
           }
         )
         .on(
@@ -98,9 +107,7 @@ export default function QueuePage() {
             filter: `session_b=eq.${sessionId}`,
           },
           (payload: any) => {
-            trackQueue.matchFound();
-            updateSession({ lastRoomId: payload.new.id });
-            router.push(`/room/${payload.new.id}`);
+            navigateToRoom(payload.new.id);
           }
         )
         .subscribe();
@@ -115,38 +122,20 @@ export default function QueuePage() {
 
       // 4. Attempt match immediately, and then every 3 seconds
       const tryMatch = async () => {
-        // Fallback: Check if someone else matched with us already
-        const { data: existingRoom } = await supabase
-          .from("chat_rooms")
-          .select("id")
-          .or(`session_a.eq.${sessionId},session_b.eq.${sessionId}`)
-          .eq("status", "active")
-          .limit(1)
-          .single();
+        if (hasNavigated) return;
 
-        if (existingRoom) {
-          trackQueue.matchFound();
-          updateSession({ lastRoomId: existingRoom.id });
-          router.push(`/room/${existingRoom.id}`);
-          return;
-        }
-
-        const { data: roomId, error } = await supabase.rpc("attempt_match", {
+        // Call atomic match RPC
+        const { data: roomId } = await supabase.rpc("attempt_match", {
           p_session_id: sessionId,
         });
         
         if (roomId) {
-          trackQueue.matchFound();
-          updateSession({ lastRoomId: roomId });
-          router.push(`/room/${roomId}`);
+          navigateToRoom(roomId);
         }
       };
 
       tryMatch();
-      const matchInterval = setInterval(tryMatch, 3000);
-
-      // Save interval ID to clear it later
-      (window as any).matchIntervalId = matchInterval;
+      matchIntervalId = setInterval(tryMatch, 3000);
     };
 
     initQueue();
@@ -154,17 +143,15 @@ export default function QueuePage() {
     return () => {
       clearInterval(countInterval);
       clearInterval(timerInterval);
-      if ((window as any).matchIntervalId) {
-        clearInterval((window as any).matchIntervalId);
-      }
+      if (matchIntervalId) clearInterval(matchIntervalId);
       if (channel) {
         import("@/lib/supabase/client").then(({ createClient }) => {
           createClient().removeChannel(channel);
         });
       }
       
-      // Remove from pool on exit
-      if (sessionId) {
+      // Remove from pool on exit (only if we haven't been matched)
+      if (sessionId && !hasNavigated) {
         import("@/lib/supabase/client").then(({ createClient }) => {
           createClient().from("waiting_pool").delete().eq("session_id", sessionId);
         });

@@ -76,8 +76,14 @@ export default function MatchSelector({ prefillTag }: MatchSelectorProps) {
     if (!canStart || isStarting) return;
     setIsStarting(true);
 
-    // Save preferences to session
-    const finalNickname = nickname.trim() || `Stranger_${Math.floor(Math.random() * 1000)}`;
+    // Generate a unique nickname if none provided
+    const adjectives = ["Cool", "Silent", "Happy", "Wild", "Chill", "Brave", "Swift", "Witty", "Calm", "Bold", "Shy", "Funky", "Lazy", "Lucky", "Salty", "Spicy", "Sneaky", "Dreamy", "Fizzy", "Moody"];
+    const nouns = ["Panda", "Tiger", "Ghost", "Mango", "Cloud", "Phoenix", "Ninja", "Pixel", "Spark", "Shadow", "Falcon", "Comet", "Berry", "Frost", "Breeze", "Flame", "Storm", "Wave", "Leaf", "Star"];
+    const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+    const randomNum = Math.floor(Math.random() * 100);
+    const finalNickname = nickname.trim() || `${randomAdj}${randomNoun}${randomNum}`;
+    
     updateSession({
       selfGender,
       desiredGender,
@@ -98,7 +104,7 @@ export default function MatchSelector({ prefillTag }: MatchSelectorProps) {
 
     // Navigate to queue
     router.push("/queue");
-  }, [canStart, isStarting, selfGender, desiredGender, selectedTags, router]);
+  }, [canStart, isStarting, selfGender, desiredGender, selectedTags, nickname, router]);
 
   return (
     <div className="w-full max-w-md mx-auto bg-surface-1 border border-border rounded-[var(--radius-lg)] p-5 sm:p-6 shadow-lg animate-fade-in-up">

@@ -37,6 +37,7 @@ export default function RoomPage() {
   const [charCount, setCharCount] = useState(0);
   const [cooldown, setCooldown] = useState(false);
   const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
+  const [roomValid, setRoomValid] = useState(true);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -44,57 +45,71 @@ export default function RoomPage() {
   const typingStateRef = useRef<boolean>(false);
   const trackQueueRef = useRef<{ isTracking: boolean, pending: boolean | null }>({ isTracking: false, pending: null });
   const channelRef = useRef<any>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Safety timeout: if partner typing state is stuck, clear it after 5s
+  const typingFallbackRef = useRef<NodeJS.Timeout | null>(null);
 
   const MAX_CHARS = 500;
-  const RATE_LIMIT = 5; // simplified local rate limit
   const session = getSession();
-  const sessionId = sessionStorage.getItem("porotta_sid") || "";
+  const sessionId = typeof window !== "undefined" ? (sessionStorage.getItem("porotta_sid") || "") : "";
 
   useEffect(() => {
+    if (!sessionId) {
+      router.replace("/");
+      return;
+    }
+
     trackRoom.joined(roomId);
     const supabase = createClient();
+    let isMounted = true;
 
     const initRoom = async () => {
-      // 1. Fetch history
-      const { data: history } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("room_id", roomId)
-        .order("sent_at", { ascending: true });
-        
-      if (history && history.length > 0) {
-        setMessages(history);
-        setShowStarterPrompts(false);
-      }
-
-      // 1.5 Fetch partner nickname
-      const { data: room } = await supabase
+      // 1. Validate room exists and is active, and we belong to it
+      const { data: room, error: roomError } = await supabase
         .from("chat_rooms")
-        .select("session_a, session_b")
+        .select("session_a, session_b, status")
         .eq("id", roomId)
         .single();
       
-      if (room) {
-        const partnerSessionId = room.session_a === sessionId ? room.session_b : room.session_a;
-        const { data: partner } = await supabase.from("sessions").select("nickname, self_gender").eq("id", partnerSessionId).single();
-        if (partner) {
-          if (partner.nickname) setPartnerNickname(partner.nickname);
-          if (partner.self_gender) setPartnerGender(partner.self_gender);
+      if (!room || roomError || (room.session_a !== sessionId && room.session_b !== sessionId)) {
+        if (isMounted) {
+          setRoomValid(false);
+          router.replace("/");
         }
+        return;
       }
 
-      // 2. Fetch Initial Messages
+      if (room.status !== "active") {
+        if (isMounted) router.replace(`/ended/${roomId}`);
+        return;
+      }
+
+      // 2. Fetch partner info
+      const partnerSessionId = room.session_a === sessionId ? room.session_b : room.session_a;
+      const { data: partner } = await supabase
+        .from("sessions")
+        .select("nickname, self_gender")
+        .eq("id", partnerSessionId)
+        .single();
+      
+      if (partner && isMounted) {
+        if (partner.nickname) setPartnerNickname(partner.nickname);
+        if (partner.self_gender) setPartnerGender(partner.self_gender);
+      }
+
+      // 3. Fetch initial messages
       const { data: initialMsgs } = await supabase
         .from("messages")
         .select("*")
         .eq("room_id", roomId)
         .order("sent_at", { ascending: true });
       
-      if (initialMsgs) {
+      if (initialMsgs && isMounted) {
         setMessages(initialMsgs);
+        if (initialMsgs.length > 0) setShowStarterPrompts(false);
       }
 
-      // 3. Setup Realtime Channel
+      // 4. Setup Realtime Channel
       const channel = supabase.channel(`room:${roomId}`, {
         config: { presence: { key: sessionId } }
       });
@@ -104,7 +119,8 @@ export default function RoomPage() {
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
-          (payload) => {
+          (payload: any) => {
+            if (!isMounted) return;
             const newMsg = payload.new as ChatMessage;
             setMessages((prev) => {
               if (prev.some(m => m.id === newMsg.id)) return prev;
@@ -119,6 +135,7 @@ export default function RoomPage() {
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "chat_rooms", filter: `id=eq.${roomId}` },
           (payload: any) => {
+            if (!isMounted) return;
             if (payload.new.status !== "active") {
               if (payload.new.end_reason === "report") {
                 router.push(`/ended/${roomId}?reported=true`);
@@ -130,6 +147,7 @@ export default function RoomPage() {
           }
         )
         .on("presence", { event: "sync" }, () => {
+          if (!isMounted) return;
           const state = channel.presenceState();
           let isPartnerTyping = false;
           for (const key in state) {
@@ -142,6 +160,16 @@ export default function RoomPage() {
             }
           }
           setPartnerTyping(isPartnerTyping);
+
+          // Safety: auto-clear typing indicator after 5 seconds
+          if (isPartnerTyping) {
+            if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
+            typingFallbackRef.current = setTimeout(() => {
+              if (isMounted) setPartnerTyping(false);
+            }, 5000);
+          } else {
+            if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
+          }
         })
         .subscribe(async (status: any) => {
           if (status === "SUBSCRIBED") {
@@ -149,34 +177,50 @@ export default function RoomPage() {
           }
         });
 
-      // 4. Polling Fallback (every 5 seconds)
-      const pollInterval = setInterval(async () => {
+      // 5. Polling fallback (every 5 seconds)
+      pollIntervalRef.current = setInterval(async () => {
+        if (!isMounted) return;
         const { data: latestMsgs } = await supabase
           .from("messages")
           .select("*")
           .eq("room_id", roomId)
           .order("sent_at", { ascending: true });
         
-        if (latestMsgs) {
+        if (latestMsgs && isMounted) {
           setMessages((prev) => {
-            const newMsgs = latestMsgs.filter(lm => !prev.some(pm => pm.id === lm.id));
-            if (newMsgs.length === 0) return prev;
-            return [...prev, ...newMsgs];
+            // Replace entire list if lengths differ (handles all edge cases)
+            if (latestMsgs.length !== prev.length) return latestMsgs;
+            // Check if any new messages
+            const hasNew = latestMsgs.some(lm => !prev.some(pm => pm.id === lm.id));
+            return hasNew ? latestMsgs : prev;
           });
         }
-      }, 5000);
 
-      (window as any).roomPollId = pollInterval;
+        // Also check if room is still active
+        const { data: roomCheck } = await supabase
+          .from("chat_rooms")
+          .select("status, end_reason")
+          .eq("id", roomId)
+          .single();
+        
+        if (roomCheck && roomCheck.status !== "active" && isMounted) {
+          if (roomCheck.end_reason === "report") {
+            router.push(`/ended/${roomId}?reported=true`);
+          } else {
+            router.push(`/ended/${roomId}`);
+          }
+        }
+      }, 5000);
     };
 
     initRoom();
 
     return () => {
-      if ((window as any).roomPollId) {
-        clearInterval((window as any).roomPollId);
-      }
+      isMounted = false;
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (channelRef.current) {
-        const supabase = createClient();
         supabase.removeChannel(channelRef.current);
       }
     };
@@ -238,12 +282,13 @@ export default function RoomPage() {
     setCharCount(0);
     setShowStarterPrompts(false);
     updateTypingStatus(false);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     
     if (messages.length === 0) trackRoom.firstMessageSent(roomId);
 
     // Simple cooldown
     setCooldown(true);
-    setTimeout(() => setCooldown(false), 500); // 500ms anti-spam
+    setTimeout(() => setCooldown(false), 500);
 
     const supabase = createClient();
     await supabase.from("messages").insert({
@@ -319,6 +364,8 @@ export default function RoomPage() {
     },
     []
   );
+
+  if (!roomValid) return null;
 
   return (
     <div className="flex flex-col h-dvh bg-bg w-full max-w-4xl mx-auto border-x border-border/30 relative shadow-sm">
