@@ -44,42 +44,62 @@ interface GeminiResponse {
   };
 }
 
-// Fallback responses if Gemini fails
-const FALLBACK_RESPONSES = [
-  "hmm",
-  "lol",
-  "yea true",
-  "haha nice",
-  "ohh ok",
-  "damn",
-  "fr",
-  "interesting",
-  "that's cool",
-  "wait what",
-  "ngl same",
-  "lmao",
-  "no way",
-  "oh wow",
-  "haha",
-];
-
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// ── Intelligent Offline Fallback Engine ──
+// This kicks in if Gemini hits the rate limit (429 Quota Exceeded)
+function generateOfflineFallback(userMessage: string, botSessionId?: string): string {
+  const msg = userMessage.toLowerCase().trim();
+  
+  if (msg === "hi" || msg === "hey" || msg === "hello" || msg === "hii") {
+    return pick(["heyy", "hey whats up", "hii there", "yo"]);
+  }
+  if (msg.includes("m or f") || msg.includes("asl") || msg === "m" || msg === "f") {
+    // Ideally we would pull the bot's actual identity, but a generic casual deflection works
+    return pick(["M", "F", "im a guy lol", "girl here"]); 
+  }
+  if (msg.includes("where") || msg.includes("from")) {
+    return pick(["mumbai wbu", "delhi", "im from bangalore", "pune hby"]);
+  }
+  if (msg.includes("how old") || msg.includes("age")) {
+    return pick(["22", "24 wbu", "21"]);
+  }
+  if (msg.includes("what doing") || msg.includes("wyd") || msg.includes("what are you doing")) {
+    return pick(["nm just chilling", "listening to music wbu", "bored scrolling tbh"]);
+  }
+  if (msg.includes("haha") || msg.includes("lol") || msg.includes("lmao")) {
+    return pick(["hehe", "lol yeah", "💀"]);
+  }
+  if (msg.endsWith("?")) {
+    return pick(["idk tbh", "maybe", "yeah probably", "not really sure"]);
+  }
+
+  // Generic conversational fillers
+  const generic = [
+    "hmm", "ohh ok", "yeah true", "damn", "fr", 
+    "interesting", "wait what", "ngl same", "oh wow", 
+    "makes sense", "anyway what's up with u"
+  ];
+  return pick(generic);
+}
+
 /**
  * Generate a response using Gemini Flash API.
- * Falls back gracefully if the API is unavailable.
+ * Falls back to Intelligent Offline Engine if the API is unavailable.
  */
 export async function generateResponse(
   systemPrompt: string,
   messageHistory: Array<{ role: "user" | "model"; parts: { text: string }[] }>
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || "AIzaSyCMSZpvCTfItVBRTtzIr8tZaJhzRAwzmms";
+  
+  const lastUserMessage = messageHistory.slice().reverse().find(m => m.role === "user")?.parts[0]?.text || "hi";
 
   if (!apiKey) {
     console.warn("[Bot] No GEMINI_API_KEY set — using fallback response");
-    return pick(FALLBACK_RESPONSES);
+    return generateOfflineFallback(lastUserMessage);
   }
 
   // Ensure the conversation starts with a "user" message (Gemini requirement)
@@ -105,7 +125,7 @@ export async function generateResponse(
   }
   if (mergedHistory[mergedHistory.length - 1].role === "model") {
     // This shouldn't happen in normal flow, but handle defensively
-    return pick(FALLBACK_RESPONSES);
+    return generateOfflineFallback(lastUserMessage);
   }
 
   const requestBody: GeminiRequest = {
@@ -158,20 +178,20 @@ export async function generateResponse(
 
     if (!response || !response.ok) {
       console.error(`[Bot] All Gemini models failed. Last error: ${lastError}`);
-      return pick(FALLBACK_RESPONSES);
+      return generateOfflineFallback(lastUserMessage);
     }
 
     const data: GeminiResponse = await response.json();
 
     if (data.error) {
       console.error(`[Bot] Gemini API error: ${data.error.message}`);
-      return pick(FALLBACK_RESPONSES);
+      return generateOfflineFallback(lastUserMessage);
     }
 
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
       console.warn("[Bot] Empty response from Gemini");
-      return pick(FALLBACK_RESPONSES);
+      return generateOfflineFallback(lastUserMessage);
     }
 
     // Clean up the response — strip quotes, extra whitespace
@@ -192,9 +212,9 @@ export async function generateResponse(
       }
     }
 
-    return cleaned || pick(FALLBACK_RESPONSES);
+    return cleaned || generateOfflineFallback(lastUserMessage);
   } catch (error: any) {
     console.error(`[Bot] Gemini API call failed: ${error.message || error}`);
-    return pick(FALLBACK_RESPONSES);
+    return generateOfflineFallback(lastUserMessage);
   }
 }
