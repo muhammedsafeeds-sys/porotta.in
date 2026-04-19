@@ -261,6 +261,23 @@ export default function RoomPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, partnerTyping]);
 
+  // Background tab notification — flash title when new message arrives
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.sender_session === sessionId) return;
+
+    if (document.hidden) {
+      const originalTitle = document.title;
+      document.title = "New message — porotta.in";
+      const onFocus = () => {
+        document.title = originalTitle;
+        window.removeEventListener("focus", onFocus);
+      };
+      window.addEventListener("focus", onFocus);
+      return () => window.removeEventListener("focus", onFocus);
+    }
+  }, [messages, sessionId]);
+
   const processTrackQueue = async () => {
     const queue = trackQueueRef.current;
     if (queue.isTracking || queue.pending === null || !channelRef.current) return;
@@ -524,6 +541,7 @@ export default function RoomPage() {
               disabled={cooldown}
               className="w-full px-4 py-2.5 bg-surface-2 border border-border rounded-full text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none transition-colors min-h-[44px] pr-14"
               autoComplete="off"
+              autoFocus
             />
             {charCount > MAX_CHARS * 0.8 && (
               <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs tabular-nums ${charCount >= MAX_CHARS ? "text-error" : "text-text-muted"}`}>

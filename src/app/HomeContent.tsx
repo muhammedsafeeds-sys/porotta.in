@@ -16,7 +16,7 @@ export default function HomeContent() {
           <p className="text-text-secondary text-sm sm:text-base max-w-md mx-auto leading-relaxed">
             Choose who you want to talk to. No account needed.
             <br className="hidden sm:block" />
-            Fast, private, safe — every session.
+            Fast, private, safe.
           </p>
         </div>
 
@@ -26,17 +26,16 @@ export default function HomeContent() {
         {/* Trust row */}
         <div className="flex flex-wrap justify-center gap-2 mt-8 animate-fade-in" style={{ animationDelay: "0.15s" }}>
           {[
-            { icon: "🔞", text: "Adults only" },
-            { icon: "🔒", text: "Private sessions" },
-            { icon: "🚩", text: "Visible reporting" },
-            { icon: "🕐", text: "Messages auto-cleared" },
-          ].map((chip) => (
+            "Adults only",
+            "Private sessions",
+            "Visible reporting",
+            "Messages auto-cleared",
+          ].map((text) => (
             <span
-              key={chip.text}
+              key={text}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-1 border border-border rounded-full text-xs text-text-secondary"
             >
-              <span>{chip.icon}</span>
-              {chip.text}
+              {text}
             </span>
           ))}
         </div>
@@ -49,13 +48,16 @@ export default function HomeContent() {
           <div className="flex flex-wrap justify-center gap-2">
             {["Late Night Talks", "Cricket", "Bollywood", "Relationships", "Memes", "College Life", "Gaming", "Deep Talk"].map(
               (tag) => (
-                <a
+                <button
                   key={tag}
-                  href={`/chat/${tag.toLowerCase().replace(/\s+/g, "-")}`}
-                  className="px-3 py-1.5 bg-surface-2 border border-border rounded-full text-xs text-text-secondary hover:text-text hover:border-primary/40 transition-all"
+                  onClick={() => {
+                    // Scroll to top where the selector is, the tag will be picked from the TagMultiSelect
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="px-3 py-1.5 bg-surface-2 border border-border rounded-full text-xs text-text-secondary hover:text-text hover:border-primary/40 transition-all cursor-pointer"
                 >
                   {tag}
-                </a>
+                </button>
               )
             )}
           </div>
