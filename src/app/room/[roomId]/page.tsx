@@ -40,7 +40,6 @@ export default function RoomPage() {
   const [cooldown, setCooldown] = useState(false);
   const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
   const [roomValid, setRoomValid] = useState(true);
-  const [partnerLeft, setPartnerLeft] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -184,14 +183,10 @@ export default function RoomPage() {
           if (!isMounted) return;
           if (key !== sessionId) {
             setPartnerTyping(false);
-            setPartnerLeft(true);
           }
         })
         .on("presence", { event: "join" }, ({ key }: any) => {
           if (!isMounted) return;
-          if (key !== sessionId) {
-            setPartnerLeft(false);
-          }
         })
         .subscribe(async (status: any) => {
           if (status === "SUBSCRIBED") {
@@ -253,12 +248,8 @@ export default function RoomPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [messages, partnerTyping]);
 
-  // Background tab notification — flash title and play sound when new message arrives
+  // Play subtle connection sound on mount
   useEffect(() => {
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg || lastMsg.sender_session === sessionId) return;
-
-    // Play subtle notification pop using Web Audio API
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContext) {
@@ -279,6 +270,12 @@ export default function RoomPage() {
     } catch (err) {
       // Ignore audio errors
     }
+  }, []);
+
+  // Background tab notification — flash title when new message arrives
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.sender_session === sessionId) return;
 
     if (document.hidden) {
       const originalTitle = document.title;
@@ -455,9 +452,7 @@ export default function RoomPage() {
               {partnerNickname} {partnerGender && <span className="text-text-muted capitalize font-normal">({partnerGender})</span>}
             </span>
             <span className="hidden sm:inline">·</span>
-            {partnerLeft ? (
-              <span className="text-error font-medium truncate">Partner disconnected...</span>
-            ) : partnerTyping ? (
+            {partnerTyping ? (
               <span className="text-primary font-medium truncate">Typing...</span>
             ) : (
               <span className="truncate text-success">Online</span>
