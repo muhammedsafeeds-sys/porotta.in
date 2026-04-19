@@ -118,23 +118,16 @@ export default function RoomPage() {
         .on("presence", { event: "sync" }, () => {
           const state = channel.presenceState();
           let isPartnerTyping = false;
-          for (const key in state) {
+          
+          Object.entries(state).forEach(([key, presences]: [string, any]) => {
             if (key !== sessionId) {
-              // check if partner has isTyping: true
-              if (state[key].some((p: any) => p.isTyping)) {
+              if (presences.some((p: any) => p.isTyping)) {
                 isPartnerTyping = true;
               }
             }
-          }
-          setPartnerTyping(isPartnerTyping);
+          });
           
-          // Fail-safe: clear typing after 10s if no update
-          if (isPartnerTyping) {
-            if (window.partnerTypingTimeout) clearTimeout(window.partnerTypingTimeout);
-            window.partnerTypingTimeout = setTimeout(() => {
-              setPartnerTyping(false);
-            }, 10000);
-          }
+          setPartnerTyping(isPartnerTyping);
         })
         .subscribe(async (status: any) => {
           if (status === "SUBSCRIBED") {
@@ -195,8 +188,9 @@ export default function RoomPage() {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         updateTypingStatus(false);
-      }, 2000);
+      }, 1500); // Shortened to 1.5s for better responsiveness
     } else {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       updateTypingStatus(false);
     }
   };
@@ -208,6 +202,11 @@ export default function RoomPage() {
     setInputValue("");
     setCharCount(0);
     setShowStarterPrompts(false);
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
     updateTypingStatus(false);
     
     if (messages.length === 0) trackRoom.firstMessageSent(roomId);
@@ -292,9 +291,9 @@ export default function RoomPage() {
   );
 
   return (
-    <div className="flex flex-col h-dvh bg-bg w-full max-w-4xl mx-auto border-x border-border/30 relative shadow-sm overflow-hidden">
+    <div className="flex flex-col h-dvh bg-bg w-full max-w-4xl mx-auto border-x border-border/30 relative shadow-sm">
       {/* Header */}
-      <header className="flex-shrink-0 sticky top-0 z-30 bg-surface-1 border-b border-border px-3 py-2.5 flex items-center justify-between gap-2">
+      <header className="sticky top-0 z-30 bg-surface-1 border-b border-border px-3 py-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Wordmark className="h-4 sm:h-5 w-auto flex-shrink-0 hidden sm:block" />
           <div className="flex items-center gap-1.5 text-xs text-text-muted overflow-hidden">
@@ -367,14 +366,13 @@ export default function RoomPage() {
 
         {/* Typing indicator */}
         {partnerTyping && (
-          <div className="flex items-start animate-fade-in py-2">
-            <div className="bg-surface-2 border border-border rounded-2xl rounded-bl-[4px] px-3 py-2 flex items-center gap-2.5">
-              <div className="flex gap-1 items-center h-2">
-                <span className="w-1.5 h-1.5 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "0ms" }} />
-                <span className="w-1.5 h-1.5 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "200ms" }} />
-                <span className="w-1.5 h-1.5 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "400ms" }} />
+          <div className="flex items-start mb-2 px-1 animate-fade-in">
+            <div className="bg-surface-2 border border-border/40 rounded-2xl rounded-bl-sm px-4 py-2.5">
+              <div className="flex gap-1.5 py-1">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "200ms" }} />
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "400ms" }} />
               </div>
-              <span className="text-[10px] text-text-muted font-bold uppercase tracking-widest">Typing</span>
             </div>
           </div>
         )}
@@ -383,7 +381,7 @@ export default function RoomPage() {
       </div>
 
       {/* Composer */}
-      <div className="flex-shrink-0 sticky bottom-0 bg-surface-1 border-t border-border px-3 py-2.5 safe-area-bottom">
+      <div className="sticky bottom-0 bg-surface-1 border-t border-border px-3 py-2.5 safe-area-bottom">
         {cooldown && (
           <p className="text-xs text-warning mb-1.5 animate-fade-in">
             Slow down — you can send another message in a moment.
