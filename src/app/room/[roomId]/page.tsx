@@ -118,15 +118,14 @@ export default function RoomPage() {
         .on("presence", { event: "sync" }, () => {
           const state = channel.presenceState();
           let isPartnerTyping = false;
-          
-          Object.entries(state).forEach(([key, presences]: [string, any]) => {
+          for (const key in state) {
             if (key !== sessionId) {
-              if (presences.some((p: any) => p.isTyping)) {
+              // check if partner has isTyping: true
+              if (state[key].some((p: any) => p.isTyping)) {
                 isPartnerTyping = true;
               }
             }
-          });
-          
+          }
           setPartnerTyping(isPartnerTyping);
         })
         .subscribe(async (status: any) => {
@@ -188,9 +187,8 @@ export default function RoomPage() {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
         updateTypingStatus(false);
-      }, 1500); // Shortened to 1.5s for better responsiveness
+      }, 2000);
     } else {
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       updateTypingStatus(false);
     }
   };
@@ -202,11 +200,6 @@ export default function RoomPage() {
     setInputValue("");
     setCharCount(0);
     setShowStarterPrompts(false);
-    
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
-    }
     updateTypingStatus(false);
     
     if (messages.length === 0) trackRoom.firstMessageSent(roomId);
@@ -366,12 +359,12 @@ export default function RoomPage() {
 
         {/* Typing indicator */}
         {partnerTyping && (
-          <div className="flex items-start mb-2 px-1 animate-fade-in">
-            <div className="bg-surface-2 border border-border/40 rounded-2xl rounded-bl-sm px-4 py-2.5">
-              <div className="flex gap-1.5 py-1">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "0ms" }} />
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "200ms" }} />
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "400ms" }} />
+          <div className="flex items-start">
+            <div className="bg-surface-1 border border-border rounded-2xl rounded-bl-md px-4 py-3 animate-fade-in">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "0ms" }} />
+                <span className="w-2 h-2 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "200ms" }} />
+                <span className="w-2 h-2 bg-text-muted rounded-full" style={{ animation: "dot-pulse 1.4s infinite ease-in-out", animationDelay: "400ms" }} />
               </div>
             </div>
           </div>
