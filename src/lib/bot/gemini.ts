@@ -3,11 +3,10 @@
 // ═══════════════════════════════════════════
 // Direct REST API calls — no SDK dependency
 
-// Try multiple models in case one is unavailable
+// Confirmed working models (tested April 2026)
 const GEMINI_MODELS = [
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-001",  
-  "gemini-1.5-flash",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
 ];
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
