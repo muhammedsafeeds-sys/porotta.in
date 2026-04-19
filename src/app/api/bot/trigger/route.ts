@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     }
 
     // ── 2. Find eligible waiting users ──
-    const fiveSecondsAgo = new Date(Date.now() - 5000).toISOString();
+    const fourSecondsAgo = new Date(Date.now() - 4000).toISOString();
 
     const { data: allWaitingUsers, error: waitError } = await supabase
       .from("waiting_pool")
@@ -60,9 +60,9 @@ export async function POST(request: Request) {
       return Response.json({ status: "empty_queue", matched: 0 });
     }
 
-    // Filter users who either waited 5 seconds OR hit the 10% chance
+    // Filter users who either waited 4 seconds OR hit the 10% chance
     const waitingUsers = allWaitingUsers.filter((u) => {
-      const waitedLongEnough = new Date(u.entered_at) < new Date(fiveSecondsAgo);
+      const waitedLongEnough = new Date(u.entered_at) < new Date(fourSecondsAgo);
       const luckyMatch = Math.random() < 0.10; // 1 in 10 chance
       return waitedLongEnough || luckyMatch;
     }).slice(0, 5); // Process max 5 at a time

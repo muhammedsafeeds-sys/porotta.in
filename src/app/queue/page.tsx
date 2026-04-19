@@ -56,7 +56,7 @@ export default function QueuePage() {
       }
     };
     fetchCount();
-    const countInterval = setInterval(fetchCount, 5000);
+    const countInterval = setInterval(fetchCount, 3000);
 
     let channel: any = null;
     let sessionId = sessionStorage.getItem("porotta_sid");

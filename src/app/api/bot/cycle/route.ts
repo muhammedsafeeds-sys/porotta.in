@@ -26,7 +26,7 @@ export async function POST() {
     // ═══════════════════════════════════════
     // TRIGGER: Match waiting users with bots
     // ═══════════════════════════════════════
-    const fiveSecondsAgo = new Date(Date.now() - 5000).toISOString();
+    const fourSecondsAgo = new Date(Date.now() - 4000).toISOString();
 
     const { data: allWaitingUsers } = await supabase
       .from("waiting_pool")
@@ -38,9 +38,9 @@ export async function POST() {
     let matched = 0;
 
     if (allWaitingUsers && allWaitingUsers.length > 0) {
-      // Filter: waited 5s OR 10% instant chance
+      // Filter: waited 4s OR 10% instant chance
       const eligibleUsers = allWaitingUsers.filter((u) => {
-        const waitedLongEnough = new Date(u.entered_at) < new Date(fiveSecondsAgo);
+        const waitedLongEnough = new Date(u.entered_at) < new Date(fourSecondsAgo);
         const luckyMatch = Math.random() < 0.10;
         return waitedLongEnough || luckyMatch;
       }).slice(0, 5);
