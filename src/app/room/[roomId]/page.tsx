@@ -119,16 +119,21 @@ export default function RoomPage() {
       channel
         .on(
           "postgres_changes",
-          { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
+          { event: "INSERT", schema: "public", table: "messages" },
           (payload: any) => {
             if (!isMounted) return;
-            const newMsg = payload.new as ChatMessage;
-            setMessages((prev) => {
-              if (prev.some(m => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
-            });
-            if (newMsg.sender_session !== sessionId) {
-              trackRoom.replyReceived(roomId);
+            if (payload.new.room_id === roomId) {
+              setMessages((prev) => {
+                // Prevent duplicate messages from optimistic UI
+                if (prev.some(m => m.id === payload.new.id)) return prev;
+                
+                return [...prev, payload.new as ChatMessage].sort(
+                  (a, b) => new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+                );
+              });
+              if (payload.new.sender_session !== sessionId) {
+                trackRoom.replyReceived(roomId);
+              }
             }
           }
         )
@@ -177,28 +182,13 @@ export default function RoomPage() {
           if (!isMounted) return;
           if (key !== sessionId) {
             setPartnerTyping(false);
-            // Give partner 10 seconds to reconnect
-            partnerLeaveTimerRef.current = setTimeout(async () => {
-              if (!isMounted) return;
-              // End the room in DB
-              await supabase.from("chat_rooms").update({
-                status: "ended",
-                end_reason: "disconnect",
-                ended_by: key,
-                ended_at: new Date().toISOString()
-              }).eq("id", roomId);
-              router.push(`/ended/${roomId}?left=true`);
-            }, 10000);
+            setPartnerLeft(true);
           }
         })
         .on("presence", { event: "join" }, ({ key }: any) => {
           if (!isMounted) return;
           if (key !== sessionId) {
-            // Partner came back, cancel the leave timer
-            if (partnerLeaveTimerRef.current) {
-              clearTimeout(partnerLeaveTimerRef.current);
-              partnerLeaveTimerRef.current = null;
-            }
+            setPartnerLeft(false);
           }
         })
         .subscribe(async (status: any) => {
@@ -250,7 +240,6 @@ export default function RoomPage() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       if (typingFallbackRef.current) clearTimeout(typingFallbackRef.current);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      if (partnerLeaveTimerRef.current) clearTimeout(partnerLeaveTimerRef.current);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
@@ -262,10 +251,32 @@ export default function RoomPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, partnerTyping]);
 
-  // Background tab notification — flash title when new message arrives
+  // Background tab notification — flash title and play sound when new message arrives
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
     if (!lastMsg || lastMsg.sender_session === sessionId) return;
+
+    // Play subtle notification pop using Web Audio API
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContext) {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+      }
+    } catch (err) {
+      // Ignore audio errors
+    }
 
     if (document.hidden) {
       const originalTitle = document.title;
@@ -338,8 +349,21 @@ export default function RoomPage() {
     setCooldown(true);
     setTimeout(() => setCooldown(false), 500);
 
+    // Optimistic UI update
+    const newId = crypto.randomUUID();
+    const optimisticMsg: ChatMessage = {
+      id: newId,
+      room_id: roomId,
+      sender_session: sessionId,
+      content: finalContent,
+      sent_at: new Date().toISOString()
+    };
+    
+    setMessages(prev => [...prev, optimisticMsg]);
+
     const supabase = createClient();
     await supabase.from("messages").insert({
+      id: newId,
       room_id: roomId,
       sender_session: sessionId,
       content: finalContent,
@@ -427,7 +451,13 @@ export default function RoomPage() {
               {partnerNickname} {partnerGender && <span className="text-text-muted capitalize font-normal">({partnerGender})</span>}
             </span>
             <span className="hidden sm:inline">·</span>
-            <span className="hidden sm:inline truncate">Messages clear in 24h</span>
+            {partnerLeft ? (
+              <span className="text-error font-medium truncate">Partner disconnected...</span>
+            ) : partnerTyping ? (
+              <span className="text-primary font-medium truncate">Typing...</span>
+            ) : (
+              <span className="truncate text-success">Online</span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
