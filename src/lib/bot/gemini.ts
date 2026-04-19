@@ -3,8 +3,14 @@
 // ═══════════════════════════════════════════
 // Direct REST API calls — no SDK dependency
 
-const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+// Try multiple models in case one is unavailable
+const GEMINI_MODELS = [
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-001",  
+  "gemini-1.5-flash",
+];
+
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 interface GeminiRequest {
   systemInstruction: {
@@ -123,16 +129,36 @@ export async function generateResponse(
   };
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(10000), // 10s timeout
-    });
+    let response: Response | null = null;
+    let lastError = "";
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "unknown");
-      console.error(`[Bot] Gemini API error ${response.status}: ${errorText}`);
+    // Try each model until one works
+    for (const model of GEMINI_MODELS) {
+      try {
+        const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+        response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (response.ok) {
+          console.log(`[Bot] Gemini model ${model} responded OK`);
+          break;
+        }
+        lastError = await response.text().catch(() => "unknown");
+        console.warn(`[Bot] Model ${model} failed (${response.status}): ${lastError.slice(0, 200)}`);
+        response = null;
+      } catch (e: any) {
+        lastError = e.message || String(e);
+        console.warn(`[Bot] Model ${model} threw: ${lastError}`);
+        response = null;
+      }
+    }
+
+    if (!response || !response.ok) {
+      console.error(`[Bot] All Gemini models failed. Last error: ${lastError}`);
       return pick(FALLBACK_RESPONSES);
     }
 

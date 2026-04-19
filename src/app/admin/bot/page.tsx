@@ -84,6 +84,35 @@ export default function AdminBotPage() {
     }
   };
 
+  // Purge ALL bots instantly
+  const [purging, setPurging] = useState(false);
+  const handlePurge = async () => {
+    if (!confirm("Delete ALL bot sessions and their rooms? This is irreversible.")) return;
+    setPurging(true);
+    setError(null);
+    try {
+      // First disable bots (which cleans up via toggle route)
+      await fetch("/api/bot/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      });
+      // Then re-enable if it was on
+      if (status?.enabled) {
+        await fetch("/api/bot/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: true }),
+        });
+      }
+      await fetchStatus();
+    } catch (err) {
+      setError(`Purge failed: ${err}`);
+    } finally {
+      setPurging(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -149,6 +178,14 @@ export default function AdminBotPage() {
             : status?.enabled
             ? "🔴 Disable Bot System"
             : "🟢 Enable Bot System"}
+        </button>
+
+        <button
+          onClick={handlePurge}
+          disabled={purging || (status?.activeBots === 0)}
+          className="px-6 py-3 rounded-xl font-semibold text-sm transition-all cursor-pointer disabled:opacity-40 bg-surface-2 text-text-secondary hover:bg-surface-3 hover:text-error"
+        >
+          {purging ? "Purging..." : "🗑️ Purge All Bots"}
         </button>
       </div>
 
