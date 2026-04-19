@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  generateIdentity,
+  generateBotIpHash,
+  createInitialBotState,
+} from "@/lib/bot/identity";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
     const supabase = createAdminClient();
 
@@ -18,25 +23,212 @@ export async function POST(request: Request) {
       return NextResponse.json({ status: "disabled" });
     }
 
-    const baseUrl = request.headers.get("origin") || "http://localhost:3000";
-    const secret = process.env.BOT_SECRET || "Safeed3030";
+    // ═══════════════════════════════════════
+    // TRIGGER: Match waiting users with bots
+    // ═══════════════════════════════════════
+    const fiveSecondsAgo = new Date(Date.now() - 5000).toISOString();
 
-    // 2. Trigger bots (matches waiting users)
-    const triggerRes = await fetch(`${baseUrl}/api/bot/trigger`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret }),
-    }).catch(() => null);
+    const { data: allWaitingUsers } = await supabase
+      .from("waiting_pool")
+      .select("session_id, self_gender, desired_gender, selected_tags, entered_at")
+      .order("entered_at", { ascending: true })
+      .limit(20);
 
-    // 3. Respond bots (replies to active chats)
-    const respondRes = await fetch(`${baseUrl}/api/bot/respond`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret }),
-    }).catch(() => null);
+    let triggered = 0;
+    let matched = 0;
 
-    return NextResponse.json({ status: "ok" });
+    if (allWaitingUsers && allWaitingUsers.length > 0) {
+      // Filter: waited 5s OR 10% instant chance
+      const eligibleUsers = allWaitingUsers.filter((u) => {
+        const waitedLongEnough = new Date(u.entered_at) < new Date(fiveSecondsAgo);
+        const luckyMatch = Math.random() < 0.10;
+        return waitedLongEnough || luckyMatch;
+      }).slice(0, 5);
+
+      if (eligibleUsers.length > 0) {
+        // Check which users already have active rooms
+        const poolIds = eligibleUsers.map((u) => u.session_id);
+        const { data: roomsA } = await supabase
+          .from("chat_rooms")
+          .select("session_a, session_b")
+          .in("session_a", poolIds)
+          .eq("status", "active");
+        const { data: roomsB } = await supabase
+          .from("chat_rooms")
+          .select("session_a, session_b")
+          .in("session_b", poolIds)
+          .eq("status", "active");
+
+        const usersWithRooms = new Set([
+          ...(roomsA || []).map((r) => r.session_a),
+          ...(roomsA || []).map((r) => r.session_b),
+          ...(roomsB || []).map((r) => r.session_a),
+          ...(roomsB || []).map((r) => r.session_b),
+        ]);
+
+        const unmatchedUsers = eligibleUsers.filter((u) => !usersWithRooms.has(u.session_id));
+
+        // Bot concurrency limit: max 15
+        const { count: currentBotCount } = await supabase
+          .from("sessions")
+          .select("*", { count: "exact", head: true })
+          .like("ip_hash", "bot-%");
+
+        const botsToCreate = Math.min(
+          unmatchedUsers.length,
+          15 - (currentBotCount || 0)
+        );
+
+        for (let i = 0; i < botsToCreate; i++) {
+          const user = unmatchedUsers[i];
+          const result = await injectBot(supabase, user);
+          triggered++;
+          if (result.roomId) matched++;
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════
+    // RESPOND: Make bots reply to messages
+    // ═══════════════════════════════════════
+    // Find all active bot sessions
+    const { data: botSessions } = await supabase
+      .from("sessions")
+      .select("id")
+      .like("ip_hash", "bot-%")
+      .limit(15);
+
+    let responded = 0;
+
+    if (botSessions && botSessions.length > 0) {
+      const botIds = botSessions.map((s) => s.id);
+
+      // Find active rooms with these bots
+      const { data: botRoomsA } = await supabase
+        .from("chat_rooms")
+        .select("id, session_a, session_b")
+        .in("session_a", botIds)
+        .eq("status", "active");
+
+      const { data: botRoomsB } = await supabase
+        .from("chat_rooms")
+        .select("id, session_a, session_b")
+        .in("session_b", botIds)
+        .eq("status", "active");
+
+      const allBotRooms = [...(botRoomsA || []), ...(botRoomsB || [])];
+
+      for (const room of allBotRooms) {
+        const botSessionId = botIds.includes(room.session_a) ? room.session_a : room.session_b;
+        const humanSessionId = botSessionId === room.session_a ? room.session_b : room.session_a;
+
+        try {
+          // Call the respond API internally
+          const respondUrl = new URL("/api/bot/respond", "http://localhost");
+          // We call respond directly via an internal import approach
+          // For now, we trigger a respond for each bot room
+          const secret = process.env.BOT_SECRET || process.env.ADMIN_PASSWORD || "Safeed3030";
+          
+          // Use absolute URL from headers or env
+          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}` 
+            : "http://localhost:3000";
+            
+          await fetch(`${baseUrl}/api/bot/respond`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ secret }),
+          }).catch(() => null);
+          
+          responded++;
+          break; // Only need to call respond once — it processes all rooms
+        } catch {
+          // ignore individual room errors
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════
+    // CLEANUP: Delete stale bot sessions
+    // ═══════════════════════════════════════
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: staleBots } = await supabase
+      .from("sessions")
+      .select("id")
+      .like("ip_hash", "bot-%")
+      .lt("last_active_at", twoMinutesAgo)
+      .limit(50);
+
+    if (staleBots && staleBots.length > 0) {
+      await supabase.from("sessions").delete().in("id", staleBots.map((s) => s.id));
+    }
+
+    return NextResponse.json({ status: "ok", triggered, matched, responded });
   } catch (error) {
+    console.error("[Bot Cycle] Error:", error);
     return NextResponse.json({ error: "Cycle failed" }, { status: 500 });
   }
+}
+
+// ── Helper: Inject a single bot ───────────
+async function injectBot(
+  supabase: any,
+  waitingUser: {
+    session_id: string;
+    self_gender: string;
+    desired_gender: string;
+    selected_tags: string[];
+  }
+) {
+  const identity = generateIdentity(waitingUser.desired_gender);
+  const botIpHash = generateBotIpHash();
+  const botState = createInitialBotState(identity);
+  const botSessionId = crypto.randomUUID();
+
+  const anonNames = ["Stranger", "Dreamer", "Guest", "Anonymous"];
+  const useAgeGender = Math.random() > 0.5;
+  const displayNickname = useAgeGender
+    ? `${identity.gender === "man" ? "M" : "F"}${identity.age}`
+    : anonNames[Math.floor(Math.random() * anonNames.length)];
+
+  // 1. Create bot session
+  const { error: sessionError } = await supabase.from("sessions").insert({
+    id: botSessionId,
+    self_gender: identity.gender,
+    desired_gender: waitingUser.self_gender,
+    nickname: displayNickname,
+    ip_hash: botIpHash,
+    bot_state: botState,
+  });
+
+  if (sessionError) {
+    console.error("[Bot Cycle] Failed to create bot session:", sessionError);
+    return { userId: waitingUser.session_id, botId: botSessionId, roomId: null };
+  }
+
+  // 2. Enter waiting pool
+  const { error: poolError } = await supabase.from("waiting_pool").insert({
+    session_id: botSessionId,
+    self_gender: identity.gender,
+    desired_gender: waitingUser.self_gender,
+    selected_tags: waitingUser.selected_tags || [],
+  });
+
+  if (poolError) {
+    await supabase.from("sessions").delete().eq("id", botSessionId);
+    return { userId: waitingUser.session_id, botId: botSessionId, roomId: null };
+  }
+
+  // 3. Match using the user's session (RPC finds the bot in the pool)
+  const { data: roomId, error: matchError } = await supabase.rpc("attempt_match", {
+    p_session_id: waitingUser.session_id,
+  });
+
+  if (matchError) {
+    await supabase.from("waiting_pool").delete().eq("session_id", botSessionId);
+    await supabase.from("sessions").delete().eq("id", botSessionId);
+    return { userId: waitingUser.session_id, botId: botSessionId, roomId: null };
+  }
+
+  return { userId: waitingUser.session_id, botId: botSessionId, roomId: roomId || null };
 }
