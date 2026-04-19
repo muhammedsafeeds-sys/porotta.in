@@ -441,10 +441,13 @@ export default function RoomPage() {
       </header>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 flex flex-col">
+        {/* Spacer pushes content to bottom when few messages */}
+        <div className="flex-1" />
+
         <div className="text-center py-4 mb-2 animate-fade-in">
           <p className="text-sm text-text-secondary">
-            You&apos;re connected with <span className="font-medium text-text">{partnerNickname}</span>! Say hello 👋
+            You&apos;re connected with <span className="font-medium text-text">{partnerNickname}</span>
           </p>
           <p className="text-xs text-text-muted mt-1">
             Messages auto-clear in 24 hours
