@@ -42,22 +42,32 @@ export async function POST(request: Request) {
       return Response.json({ status: "disabled", message: "Bot system is disabled" });
     }
 
-    // ── 2. Find users waiting > 10 seconds ──
-    const tenSecondsAgo = new Date(Date.now() - 10_000).toISOString();
+    // ── 2. Find eligible waiting users ──
+    const fiveSecondsAgo = new Date(Date.now() - 5000).toISOString();
 
-    const { data: waitingUsers, error: waitError } = await supabase
+    const { data: allWaitingUsers, error: waitError } = await supabase
       .from("waiting_pool")
       .select("session_id, self_gender, desired_gender, selected_tags, entered_at")
-      .lt("entered_at", tenSecondsAgo)
       .order("entered_at", { ascending: true })
-      .limit(5); // Process max 5 at a time
+      .limit(20);
 
     if (waitError) {
       console.error("[Bot Trigger] Error querying waiting_pool:", waitError);
       return Response.json({ error: "DB query failed" }, { status: 500 });
     }
 
-    if (!waitingUsers || waitingUsers.length === 0) {
+    if (!allWaitingUsers || allWaitingUsers.length === 0) {
+      return Response.json({ status: "empty_queue", matched: 0 });
+    }
+
+    // Filter users who either waited 5 seconds OR hit the 10% chance
+    const waitingUsers = allWaitingUsers.filter((u) => {
+      const waitedLongEnough = new Date(u.entered_at) < new Date(fiveSecondsAgo);
+      const luckyMatch = Math.random() < 0.10; // 1 in 10 chance
+      return waitedLongEnough || luckyMatch;
+    }).slice(0, 5); // Process max 5 at a time
+
+    if (waitingUsers.length === 0) {
       return Response.json({ status: "ok", triggered: 0, message: "No users waiting long enough" });
     }
 

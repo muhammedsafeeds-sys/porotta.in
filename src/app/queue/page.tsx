@@ -48,6 +48,9 @@ export default function QueuePage() {
           const data = await res.json();
           setOnlineCount(data.count);
         }
+        
+        // Poor man's cron: ping the bot engine to keep it alive
+        fetch("/api/bot/cycle", { method: "POST" }).catch(() => {});
       } catch (err) {
         // ignore
       }

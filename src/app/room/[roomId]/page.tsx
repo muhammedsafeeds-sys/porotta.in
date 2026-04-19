@@ -227,6 +227,9 @@ export default function RoomPage() {
             router.push(`/ended/${roomId}`);
           }
         }
+
+        // Poor man's cron: ping the bot engine to keep it alive
+        fetch("/api/bot/cycle", { method: "POST" }).catch(() => {});
       }, 5000);
     };
 
