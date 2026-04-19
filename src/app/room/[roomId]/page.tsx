@@ -104,7 +104,7 @@ export default function RoomPage() {
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "chat_rooms", filter: `id=eq.${roomId}` },
-          (payload) => {
+          (payload: any) => {
             if (payload.new.status !== "active") {
               if (payload.new.end_reason === "report") {
                 router.push(`/ended/${roomId}?reported=true`);
@@ -128,7 +128,7 @@ export default function RoomPage() {
           }
           setPartnerTyping(isPartnerTyping);
         })
-        .subscribe(async (status) => {
+        .subscribe(async (status: any) => {
           if (status === "SUBSCRIBED") {
             await channel.track({ isTyping: false });
           }
