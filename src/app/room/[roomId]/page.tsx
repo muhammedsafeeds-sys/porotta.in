@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { useRouter, useParams } from "next/navigation";
 import Wordmark from "@/components/layout/Wordmark";
 import { getSession } from "@/lib/session";
@@ -248,7 +249,7 @@ export default function RoomPage() {
 
   // Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [messages, partnerTyping]);
 
   // Background tab notification — flash title and play sound when new message arrives
@@ -333,40 +334,42 @@ export default function RoomPage() {
     }
   };
 
-  const sendMessage = async (content: string) => {
+  const sendMessage = (content: string) => {
     if (!content.trim() || content.length > MAX_CHARS || cooldown) return;
     const finalContent = content.trim();
 
-    setInputValue("");
-    setCharCount(0);
-    setShowStarterPrompts(false);
-    updateTypingStatus(false);
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    
-    if (messages.length === 0) trackRoom.firstMessageSent(roomId);
-
-    // Simple cooldown
-    setCooldown(true);
-    setTimeout(() => setCooldown(false), 500);
-
-    // Optimistic UI update
     const newId = crypto.randomUUID();
     const optimisticMsg: ChatMessage = {
       id: newId,
-      room_id: roomId,
+      room_id: roomId as string,
       sender_session: sessionId,
       content: finalContent,
       sent_at: new Date().toISOString()
     };
     
-    setMessages(prev => [...prev, optimisticMsg]);
+    // Force immediate DOM update for zero perceived delay
+    flushSync(() => {
+      setInputValue("");
+      setCharCount(0);
+      setShowStarterPrompts(false);
+      updateTypingStatus(false);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      setCooldown(true);
+      setMessages(prev => [...prev, optimisticMsg]);
+    });
+    
+    if (messages.length === 0) trackRoom.firstMessageSent(roomId as string);
+    setTimeout(() => setCooldown(false), 500);
 
+    // Fire and forget network request (non-blocking)
     const supabase = createClient();
-    await supabase.from("messages").insert({
+    supabase.from("messages").insert({
       id: newId,
       room_id: roomId,
       sender_session: sessionId,
       content: finalContent,
+    }).then(({error}) => {
+      if (error) console.error("Message send failed:", error);
     });
   };
 
