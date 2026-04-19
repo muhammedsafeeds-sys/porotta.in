@@ -8,8 +8,18 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    let forceSessionId = null;
+    let clientElapsed = 0;
+    try {
+      const body = await request.json();
+      forceSessionId = body.forceSessionId;
+      clientElapsed = body.elapsed || 0;
+    } catch (e) {
+      // ignore
+    }
+
     const supabase = createAdminClient();
 
     // 1. Check if bots are enabled
@@ -38,11 +48,12 @@ export async function POST() {
     let matched = 0;
 
     if (allWaitingUsers && allWaitingUsers.length > 0) {
-      // Filter: waited 4s OR 10% instant chance
+      // Filter: waited 4s OR 10% instant chance OR explicitly called by client after 4+ seconds
       const eligibleUsers = allWaitingUsers.filter((u) => {
         const waitedLongEnough = new Date(u.entered_at) < new Date(fourSecondsAgo);
         const luckyMatch = Math.random() < 0.10;
-        return waitedLongEnough || luckyMatch;
+        const clientForced = (u.session_id === forceSessionId && clientElapsed >= 4);
+        return waitedLongEnough || luckyMatch || clientForced;
       }).slice(0, 5);
 
       if (eligibleUsers.length > 0) {

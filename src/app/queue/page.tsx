@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/layout/AppHeader";
 import Button from "@/components/ui/Button";
@@ -35,10 +35,17 @@ export default function QueuePage() {
     });
     trackQueue.entered();
 
+    const elapsedRef = useRef(0);
+
     // Timer
     const timerInterval = setInterval(() => {
-      setElapsed((p) => p + 1);
+      setElapsed((p) => {
+        elapsedRef.current = p + 1;
+        return p + 1;
+      });
     }, 1000);
+
+    let sessionId = sessionStorage.getItem("porotta_sid");
 
     // Fetch real online count from API
     const fetchCount = async () => {
@@ -49,8 +56,14 @@ export default function QueuePage() {
           setOnlineCount(data.count);
         }
         
-        // Poor man's cron: ping the bot engine to keep it alive
-        fetch("/api/bot/cycle", { method: "POST" }).catch(() => {});
+        // Pass our explicit elapsed time so the backend doesn't guess
+        if (sessionId) {
+          fetch("/api/bot/cycle", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ forceSessionId: sessionId, elapsed: elapsedRef.current })
+          }).catch(() => {});
+        }
       } catch (err) {
         // ignore
       }
@@ -139,6 +152,21 @@ export default function QueuePage() {
         
         if (roomId) {
           navigateToRoom(roomId);
+          return;
+        }
+
+        // FALLBACK: The server might have already matched us (e.g., bot injection),
+        // but the Realtime subscription missed the event. Let's check manually.
+        const { data: existingRoom } = await supabase
+          .from("chat_rooms")
+          .select("id")
+          .or(`session_a.eq.${sessionId},session_b.eq.${sessionId}`)
+          .eq("status", "active")
+          .limit(1)
+          .single();
+
+        if (existingRoom) {
+          navigateToRoom(existingRoom.id);
         }
       };
 
