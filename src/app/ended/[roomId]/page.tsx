@@ -169,7 +169,8 @@ export default function EndedPage() {
           await supabase.from("chat_rooms").update({
             status: "reported",
             end_reason: "report_after_end",
-            ended_by: sessionId
+            ended_by: sessionId,
+            ended_at: new Date().toISOString()
           }).eq("id", roomId);
         }}
       />

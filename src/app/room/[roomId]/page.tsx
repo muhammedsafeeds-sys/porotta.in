@@ -184,7 +184,8 @@ export default function RoomPage() {
               await supabase.from("chat_rooms").update({
                 status: "ended",
                 end_reason: "disconnect",
-                ended_by: key
+                ended_by: key,
+                ended_at: new Date().toISOString()
               }).eq("id", roomId);
               router.push(`/ended/${roomId}?left=true`);
             }, 10000);
@@ -356,7 +357,8 @@ export default function RoomPage() {
     await supabase.from("chat_rooms").update({
       status: "ended",
       end_reason: "user_end",
-      ended_by: sessionId
+      ended_by: sessionId,
+      ended_at: new Date().toISOString()
     }).eq("id", roomId);
     router.push(`/ended/${roomId}`);
   }, [roomId, router, sessionId]);
@@ -588,7 +590,8 @@ export default function RoomPage() {
           await supabase.from("chat_rooms").update({
             status: "reported",
             end_reason: "report",
-            ended_by: sessionId
+            ended_by: sessionId,
+            ended_at: new Date().toISOString()
           }).eq("id", roomId);
           router.push(`/ended/${roomId}?reported=true`);
         }}
