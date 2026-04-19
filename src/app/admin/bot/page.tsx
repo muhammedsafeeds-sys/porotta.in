@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
 interface BotInfo {
   id: string;
@@ -26,25 +26,25 @@ export default function AdminBotPage() {
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
-  const [schedulerActive, setSchedulerActive] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
-  const schedulerRef = useRef<NodeJS.Timeout | null>(null);
-  const logsEndRef = useRef<HTMLDivElement>(null);
-
-  const addLog = useCallback((msg: string) => {
-    const ts = new Date().toLocaleTimeString();
-    setLogs((prev) => [...prev.slice(-99), `[${ts}] ${msg}`]);
-  }, []);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch status
   const fetchStatus = useCallback(async () => {
     try {
-      const baseUrl = window.location.protocol + "//" + window.location.host;
-      const res = await fetch(baseUrl + "/api/bot/status");
+      const res = await fetch(`/api/bot/status?t=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) {
+        setError(`Status API returned ${res.status}`);
+        return;
+      }
       const data = await res.json();
-      setStatus(data);
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setStatus(data);
+        setError(null);
+      }
     } catch (err) {
-      console.error("Failed to fetch bot status", err);
+      setError(`Failed to fetch: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -56,115 +56,33 @@ export default function AdminBotPage() {
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
-  // Auto-scroll logs
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
-
-  // Toggle bot system
+  // Toggle bot system — THE ONLY BUTTON NEEDED
   const handleToggle = async () => {
     if (!status) return;
     setToggling(true);
+    setError(null);
     try {
-      const baseUrl = window.location.protocol + "//" + window.location.host;
-      const res = await fetch(baseUrl + "/api/bot/toggle", {
+      const newState = !status.enabled;
+      const res = await fetch("/api/bot/toggle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !status.enabled }),
+        body: JSON.stringify({ enabled: newState }),
       });
       const data = await res.json();
-      if (data.status === "ok") {
-        addLog(`Bot system ${data.enabled ? "ENABLED" : "DISABLED"}`);
-        if (!data.enabled && schedulerActive) {
-          stopScheduler();
-        }
+      if (data.error) {
+        setError(`Toggle failed: ${data.error}`);
+      } else {
+        // Immediately update UI
+        setStatus((prev) => prev ? { ...prev, enabled: newState } : prev);
+        // Then refresh from server
         await fetchStatus();
       }
     } catch (err) {
-      addLog(`Toggle failed: ${err}`);
+      setError(`Toggle request failed: ${err}`);
     } finally {
       setToggling(false);
     }
   };
-
-  // Scheduler — calls trigger + respond periodically
-  const runCycle = useCallback(async () => {
-    if (!schedulerRef.current) return; // Stop if cancelled
-    
-    const secret =
-      (typeof window !== "undefined" && (window as any).__BOT_SECRET) ||
-      "Safeed3030";
-
-    try {
-      const baseUrl = window.location.protocol + "//" + window.location.host;
-      // Trigger: check for waiting users and inject bots
-      const triggerRes = await fetch(baseUrl + "/api/bot/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret }),
-      });
-      const triggerData = await triggerRes.json();
-
-      if (triggerData.triggered > 0) {
-        addLog(
-          `🤖 Triggered ${triggerData.triggered} bot(s), matched ${triggerData.matched}`
-        );
-      }
-
-      // Respond: process bot rooms
-      const respondRes = await fetch(baseUrl + "/api/bot/respond", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret }),
-      });
-      const respondData = await respondRes.json();
-
-      if (respondData.processed > 0) {
-        const details = respondData.details || [];
-        const interesting = details.filter(
-          (d: any) =>
-            d.action !== "waiting_for_human" &&
-            d.action !== "waiting_to_respond" &&
-            d.action !== "already_responded"
-        );
-        for (const d of interesting) {
-          addLog(`💬 Room ${d.roomId.slice(0, 8)}: ${d.action}`);
-        }
-      }
-    } catch (err) {
-      addLog(`⚠️ Cycle error: ${err}`);
-    }
-
-    // Schedule next cycle ONLY if still active
-    if (schedulerRef.current) {
-      schedulerRef.current = setTimeout(runCycle, 4000); // 4s gap between finish and next start
-    }
-  }, [addLog]);
-
-  const startScheduler = useCallback(() => {
-    if (schedulerRef.current) return;
-    setSchedulerActive(true);
-    addLog("▶ Scheduler started (4s interval)");
-
-    // Start recursive loop
-    schedulerRef.current = setTimeout(runCycle, 100);
-  }, [addLog, runCycle]);
-
-  const stopScheduler = useCallback(() => {
-    if (schedulerRef.current) {
-      clearTimeout(schedulerRef.current);
-      schedulerRef.current = null;
-    }
-    setSchedulerActive(false);
-    addLog("⏸ Scheduler stopped");
-  }, [addLog]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (schedulerRef.current) clearTimeout(schedulerRef.current);
-    };
-  }, []);
 
   if (loading) {
     return (
@@ -179,16 +97,23 @@ export default function AdminBotPage() {
       <div>
         <h1 className="text-xl font-bold text-text mb-1">🤖 Bot Control</h1>
         <p className="text-sm text-text-muted">
-          Manage the AI chat bot system. Bots auto-join when real users wait
-          too long.
+          Enable/disable the AI bot system. When enabled, bots automatically
+          join when users wait 5+ seconds. No scheduler needed — it runs itself.
         </p>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-error/10 border border-error/30 rounded-xl px-4 py-3 text-sm text-error">
+          ⚠️ {error}
+        </div>
+      )}
 
       {/* ── Status Cards ────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatusCard
           label="System"
-          value={status?.enabled ? "Enabled" : "Disabled"}
+          value={status?.enabled ? "ON" : "OFF"}
           color={status?.enabled ? "text-success" : "text-error"}
         />
         <StatusCard
@@ -208,44 +133,37 @@ export default function AdminBotPage() {
         />
       </div>
 
-      {/* ── Controls ────────────────────────── */}
+      {/* ── Toggle Button ────────────────────── */}
       <div className="flex flex-wrap gap-3">
         <button
           onClick={handleToggle}
           disabled={toggling}
-          className={`px-5 py-2.5 rounded-lg font-medium text-sm transition-all cursor-pointer disabled:opacity-50 ${
+          className={`px-6 py-3 rounded-xl font-semibold text-sm transition-all cursor-pointer disabled:opacity-50 ${
             status?.enabled
               ? "bg-error text-white hover:brightness-90"
               : "bg-success text-white hover:brightness-90"
           }`}
         >
           {toggling
-            ? "..."
+            ? "Updating..."
             : status?.enabled
-            ? "Disable Bot System"
-            : "Enable Bot System"}
+            ? "🔴 Disable Bot System"
+            : "🟢 Enable Bot System"}
         </button>
+      </div>
 
-        {status?.enabled && (
-          <button
-            onClick={schedulerActive ? stopScheduler : startScheduler}
-            className={`px-5 py-2.5 rounded-lg font-medium text-sm transition-all cursor-pointer ${
-              schedulerActive
-                ? "bg-warning text-black hover:brightness-90"
-                : "bg-primary text-white hover:brightness-90"
-            }`}
-          >
-            {schedulerActive ? "⏸ Stop Scheduler" : "▶ Start Scheduler"}
-          </button>
-        )}
-
-        <button
-          onClick={runCycle}
-          disabled={!status?.enabled}
-          className="px-5 py-2.5 bg-surface-2 text-text-secondary rounded-lg font-medium text-sm hover:bg-surface-3 transition-all cursor-pointer disabled:opacity-40"
-        >
-          Run Single Cycle
-        </button>
+      {/* How it works */}
+      <div className="bg-surface-1 border border-border rounded-xl p-4 text-sm">
+        <h3 className="font-semibold text-text mb-2">How it works</h3>
+        <ul className="space-y-1 text-text-secondary list-disc pl-4">
+          <li>When <strong className="text-success">Enabled</strong>, bots auto-join users who wait 5+ seconds</li>
+          <li>~10% of users get matched with a bot instantly for a natural mix</li>
+          <li>Max 15 concurrent bots to protect your free tier</li>
+          <li>Bot sessions auto-cleanup after 2 minutes of inactivity</li>
+          <li>Online count is inflated by 100-150 when bots are on</li>
+          <li>Inappropriate messages trigger instant disconnect</li>
+          <li>When <strong className="text-error">Disabled</strong>, all active bots are killed immediately</li>
+        </ul>
       </div>
 
       {/* ── Active Bots Table ───────────────── */}
@@ -253,7 +171,7 @@ export default function AdminBotPage() {
         <div className="bg-surface-1 border border-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-border">
             <h2 className="text-sm font-semibold text-text">
-              Active Bot Sessions
+              Active Bot Sessions ({status.bots.length})
             </h2>
           </div>
           <div className="overflow-x-auto">
@@ -261,27 +179,13 @@ export default function AdminBotPage() {
               <thead>
                 <tr className="border-b border-border text-left">
                   <th className="px-4 py-2 text-text-muted font-medium">ID</th>
-                  <th className="px-4 py-2 text-text-muted font-medium">
-                    Name
-                  </th>
-                  <th className="px-4 py-2 text-text-muted font-medium">
-                    Gender
-                  </th>
-                  <th className="px-4 py-2 text-text-muted font-medium">
-                    Personality
-                  </th>
-                  <th className="px-4 py-2 text-text-muted font-medium">
-                    City
-                  </th>
-                  <th className="px-4 py-2 text-text-muted font-medium">
-                    Msgs
-                  </th>
-                  <th className="px-4 py-2 text-text-muted font-medium">
-                    Mood
-                  </th>
-                  <th className="px-4 py-2 text-text-muted font-medium">
-                    Phase
-                  </th>
+                  <th className="px-4 py-2 text-text-muted font-medium">Name</th>
+                  <th className="px-4 py-2 text-text-muted font-medium">Gender</th>
+                  <th className="px-4 py-2 text-text-muted font-medium">Personality</th>
+                  <th className="px-4 py-2 text-text-muted font-medium">City</th>
+                  <th className="px-4 py-2 text-text-muted font-medium">Msgs</th>
+                  <th className="px-4 py-2 text-text-muted font-medium">Mood</th>
+                  <th className="px-4 py-2 text-text-muted font-medium">Phase</th>
                 </tr>
               </thead>
               <tbody>
@@ -346,54 +250,24 @@ export default function AdminBotPage() {
         </div>
       )}
 
-      {/* ── Logs ────────────────────────────── */}
-      <div className="bg-surface-1 border border-border rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-text">Activity Log</h2>
-          <button
-            onClick={() => setLogs([])}
-            className="text-xs text-text-muted hover:text-text transition-colors cursor-pointer"
-          >
-            Clear
-          </button>
-        </div>
-        <div className="h-64 overflow-y-auto px-4 py-2 font-mono text-xs space-y-0.5">
-          {logs.length === 0 ? (
-            <p className="text-text-muted py-4 text-center">
-              No activity yet. Start the scheduler to begin.
-            </p>
-          ) : (
-            logs.map((log, i) => (
-              <div key={i} className="text-text-secondary leading-relaxed">
-                {log}
-              </div>
-            ))
-          )}
-          <div ref={logsEndRef} />
-        </div>
-      </div>
-
       {/* ── Setup Info ──────────────────────── */}
       <div className="bg-surface-1 border border-border rounded-xl p-4 text-sm">
         <h3 className="font-semibold text-text mb-2">⚙️ Setup Checklist</h3>
         <ul className="space-y-1 text-text-secondary">
           <li>
-            1. Add <code className="text-primary">GEMINI_API_KEY</code> to{" "}
-            <code>.env.local</code>
+            1. Add <code className="text-primary">GEMINI_API_KEY</code> to Vercel Environment Variables
           </li>
           <li>
-            2. Add <code className="text-primary">SUPABASE_SERVICE_ROLE_KEY</code>{" "}
-            to <code>.env.local</code> (optional, uses anon key as fallback)
+            2. Add <code className="text-primary">SUPABASE_SERVICE_ROLE_KEY</code> to Vercel Environment Variables
           </li>
           <li>
             3. Run migration{" "}
-            <code className="text-primary">009_bot_config.sql</code> in
+            <code className="text-primary">011_fix_system_config_rls.sql</code> in
             Supabase SQL editor
           </li>
           <li>
-            4. Enable the bot system using the toggle above
+            4. Click the Enable button above — that&apos;s it!
           </li>
-          <li>5. Start the scheduler to begin bot operations</li>
         </ul>
       </div>
     </div>
