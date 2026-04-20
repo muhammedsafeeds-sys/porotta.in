@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { useRouter, useParams } from "next/navigation";
 import Wordmark from "@/components/layout/Wordmark";
+import AdsterraAd from "@/components/ads/AdsterraAd";
 import { getSession } from "@/lib/session";
 import { trackRoom } from "@/lib/analytics";
 import ReportModal from "@/components/chat/ReportModal";
@@ -596,6 +597,10 @@ export default function RoomPage() {
             </svg>
           </button>
         </form>
+        {/* Chat Banner Ad */}
+        <div className="mt-2 flex justify-center border-t border-border/40 pt-2">
+          <AdsterraAd type="banner-320x50" />
+        </div>
       </div>
 
       {/* Report modal */}

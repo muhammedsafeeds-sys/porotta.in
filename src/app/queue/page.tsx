@@ -7,6 +7,7 @@ import Button from "@/components/ui/Button";
 import OnlineCountPill from "@/components/ui/OnlineCountPill";
 import { getSession, updateSession } from "@/lib/session";
 import { trackQueue } from "@/lib/analytics";
+import AdsterraAd from "@/components/ads/AdsterraAd";
 
 const STATUS_COPY = [
   { maxSec: 5, text: "Finding your match…" },
@@ -270,7 +271,7 @@ export default function QueuePage() {
           </div>
 
           {/* Action buttons */}
-          <div className="space-y-3">
+          <div className="space-y-3 mb-8">
             {showBroaden && preferences.tags.length > 0 && (
               <Button
                 id="broaden-match-btn"
@@ -297,6 +298,13 @@ export default function QueuePage() {
             >
               Cancel
             </Button>
+          </div>
+
+          {/* Advertisement - Native or 300x250 */}
+          <div className="mt-8 pt-6 border-t border-border">
+            <p className="text-xs text-text-muted mb-2 text-center uppercase tracking-widest">Advertisement</p>
+            {/* Show a 300x250 banner on the queue page as it fits perfectly below the spinner */}
+            <AdsterraAd type="banner-300x250" />
           </div>
         </div>
       </main>
