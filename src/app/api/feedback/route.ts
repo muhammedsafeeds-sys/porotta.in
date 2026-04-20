@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(req: Request) {
   try {
@@ -8,7 +8,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "Message is required" }, { status: 400 });
     }
 
-    const supabase = createClient();
+    const supabase = createAdminClient();
     
     const { error } = await supabase.from("feedback").insert({
       room_id: roomId,
