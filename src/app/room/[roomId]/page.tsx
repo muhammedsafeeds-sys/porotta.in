@@ -447,7 +447,13 @@ export default function RoomPage() {
   if (!roomValid) return null;
 
   return (
-    <div className="flex flex-col h-dvh bg-bg w-full max-w-4xl mx-auto border-x border-border/30 relative shadow-sm">
+    <div className="flex justify-center w-full h-dvh bg-[#1a1816] overflow-hidden">
+      {/* Left Ad - hidden on mobile */}
+      <div className="hidden lg:flex flex-col items-center justify-center w-[180px] p-4 flex-shrink-0 h-full">
+        <AdsterraAd type="banner-160x600" />
+      </div>
+
+      <div className="flex flex-col h-dvh bg-bg w-full max-w-4xl border-x border-border/30 relative shadow-sm flex-shrink">
       {/* Header */}
       <header className="sticky top-0 z-30 bg-surface-1 border-b border-border px-3 py-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -633,6 +639,12 @@ export default function RoomPage() {
           router.push(`/ended/${roomId}?reported=true`);
         }}
       />
+      </div>
+
+      {/* Right Ad - hidden on mobile */}
+      <div className="hidden lg:flex flex-col items-center justify-center w-[180px] p-4 flex-shrink-0 h-full">
+        <AdsterraAd type="banner-160x600" />
+      </div>
     </div>
   );
 }
