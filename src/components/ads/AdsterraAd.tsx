@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 
 interface AdsterraAdProps {
-  type: "banner-320x50" | "banner-300x250" | "native";
+  type: "banner-320x50" | "banner-300x250" | "banner-160x600" | "native";
   className?: string;
 }
 
@@ -69,6 +69,28 @@ export default function AdsterraAd({ type, className = "" }: AdsterraAdProps) {
             };
           </script>
           <script src="https://www.highperformanceformat.com/1c7ad0e6ed6a4705e42c10e8d6352eed/invoke.js"></script>
+        </body>
+      </html>
+    `;
+  } else if (type === "banner-160x600") {
+    width = "160";
+    height = "600";
+    adHtml = `
+      <html>
+        <head>
+          <style>body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; }</style>
+        </head>
+        <body>
+          <script>
+            atOptions = {
+              'key' : '62a66023500c7492ed900ba8c7f9ffb3',
+              'format' : 'iframe',
+              'height' : 600,
+              'width' : 160,
+              'params' : {}
+            };
+          </script>
+          <script src="https://www.highperformanceformat.com/62a66023500c7492ed900ba8c7f9ffb3/invoke.js"></script>
         </body>
       </html>
     `;
