@@ -88,35 +88,50 @@ export default function EndedPage() {
             <p className="text-text-secondary text-sm mb-6">Start a new conversation.</p>
           )}
 
-          {/* Feedback chips */}
+          {/* Feedback Box */}
           {!feedbackGiven && (
-            <div className="flex flex-wrap justify-center gap-2 mb-6">
-              {["Good chat", "Couldn't connect", "Wait was long"].map((fb) => (
-                <button
-                  key={fb}
-                  onClick={async () => {
-                    setFeedbackGiven(fb);
-                    const supabase = createClient();
-                    
-                    // Identify if we are session_a or session_b
-                    const { data: room } = await supabase.from("chat_rooms").select("session_a, session_b").eq("id", roomId).single();
-                    if (room) {
-                      const isSessionA = room.session_a === sessionId;
-                      await supabase.from("chat_rooms")
-                        .update(isSessionA ? { feedback_a: fb } : { feedback_b: fb })
-                        .eq("id", roomId);
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-surface-1 border border-border rounded-full text-xs text-text-secondary hover:text-text hover:border-primary/40 transition-all cursor-pointer"
-                >
-                  {fb}
-                </button>
-              ))}
+            <div className="mb-6">
+              <textarea
+                placeholder="Leave a quick feedback..."
+                className="w-full bg-surface-2 border border-border rounded-xl p-3 text-sm text-text placeholder-text-muted resize-none focus:outline-none focus:border-primary/50 transition-colors h-20"
+                maxLength={500}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    const form = e.currentTarget.closest("form");
+                    if (form) form.requestSubmit();
+                  }
+                }}
+                name="feedbackMessage"
+                id="feedbackMessage"
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                className="mt-2 w-full"
+                onClick={async () => {
+                  const el = document.getElementById("feedbackMessage") as HTMLTextAreaElement;
+                  if (!el || !el.value.trim()) return;
+                  
+                  setFeedbackGiven("Sent");
+                  await fetch("/api/feedback", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      roomId,
+                      sessionId,
+                      message: el.value.trim()
+                    })
+                  });
+                }}
+              >
+                Submit Feedback
+              </Button>
             </div>
           )}
           {feedbackGiven && (
-            <p className="text-xs text-text-muted mb-6 animate-fade-in">
-              Thanks for the feedback ✓
+            <p className="text-sm text-success mb-6 animate-fade-in font-medium">
+              Thank you for your feedback!
             </p>
           )}
 

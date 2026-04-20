@@ -8,6 +8,7 @@ import Wordmark from "@/components/layout/Wordmark";
 const NAV_ITEMS = [
   { href: "/admin/live", label: "Live Ops", icon: "🔴" },
   { href: "/admin/bot", label: "Bot Control", icon: "🤖" },
+  { href: "/admin/feedback", label: "Feedback", icon: "📝" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
