@@ -223,6 +223,13 @@ async function processRoom(
   // Check exit strategy
   const exitAction = getExitAction(botData);
 
+  // Check if we hit the natural chat length limit (20-25 messages)
+  const maxMessages = 20 + (parseInt(botSessionId.replace(/\D/g, "") || "0", 10) % 6); // Pseudo-random 20-25 based on ID
+  if (newMessageCount > maxMessages) {
+    // Force exit to keep chats moving organically
+    exitAction.message = "[END_CHAT]";
+  }
+
   // Check mood drift
   const newMood = checkMoodDrift(
     newMessageCount,
