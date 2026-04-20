@@ -151,7 +151,10 @@ export async function generateResponse(
       console.log("[Bot] Falling back to OpenAI (gpt-3.5-turbo)");
       const openAIAnswer = await generateOpenAIResponse(
         systemPrompt,
-        mergedHistory,
+        mergedHistory.map(m => ({
+          role: m.role === "model" ? "assistant" : "user",
+          parts: m.parts
+        })),
         openAIApiKey
       );
       if (openAIAnswer) successText = openAIAnswer;
