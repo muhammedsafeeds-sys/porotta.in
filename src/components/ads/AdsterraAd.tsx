@@ -91,7 +91,7 @@ export default function AdsterraAd({ type, className = "" }: AdsterraAdProps) {
   // We use an iframe to isolate the ad network's document.write calls from React.
   // If we don't do this, Adsterra will wipe out the entire React application!
   return (
-    <div className={`flex justify-center items-center overflow-hidden z-10 ${className}`} style={{ width: width === '100%' ? '100%' : \`\${width}px\`, height: \`\${height}px\` }}>
+    <div className={`flex justify-center items-center overflow-hidden z-10 ${className}`} style={{ width: width === '100%' ? '100%' : `${width}px`, height: `${height}px` }}>
       <iframe
         title="Advertisement"
         srcDoc={adHtml}
