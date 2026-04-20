@@ -93,7 +93,7 @@ export async function generateResponse(
   systemPrompt: string,
   messageHistory: Array<{ role: "user" | "model"; parts: { text: string }[] }>
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY || "AIzaSyCMSZpvCTfItVBRTtzIr8tZaJhzRAwzmms";
+  const apiKey = process.env.GEMINI_API_KEY;
   
   const lastUserMessage = messageHistory.slice().reverse().find(m => m.role === "user")?.parts[0]?.text || "hi";
 
